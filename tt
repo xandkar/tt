@@ -129,7 +129,7 @@
 (define (main)
   (setup-logging)
   (current-http-response-auto #f)
-  (current-http-user-agent "tt 0.0.0")
+  (current-http-user-agent "xandkar/tt 0.0.0")
   (date-display-format 'rfc2822)
 
   (define feeds (we-are-twtxt))
