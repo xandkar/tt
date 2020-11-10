@@ -8,6 +8,17 @@
 ; TODO feed set operations
 ; TODO timeline as a result of a query (feed set op + filter expressions)
 ; TODO named timelines
+; TODO alt timeline formats: irc-like | email-like
+;
+; - irc-like:
+;       <timestamp> <nick> <msg><lf>
+;
+; - email-like:
+;       <timestamp>
+;       <nick> <uri>
+;       <msg>
+;       <lf><lf>
+;
 ; TODO CLI params
 ; TODO config files
 ; TODO parse mentions:
