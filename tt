@@ -120,6 +120,7 @@
            (str->lines payload)]
          [feeds
            (map (λ (line)
+                   ; TODO validation
                    (define toks (string-split line))
                    (feed
                      [list-ref toks 0]
