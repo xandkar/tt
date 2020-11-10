@@ -27,6 +27,9 @@
 ; - q | query
 ;   - see timeline ops above
 ;   - see hashtag and channels above
+; TODO user-agent format: <client>/<version> (+<source.url>; @<source.nick>)
+;   - requires configurability
+;   - ref: https://twtxt.readthedocs.io/en/latest/user/discoverability.html
 
 #lang racket
 
