@@ -1,0 +1,146 @@
+#! /usr/bin/env racket
+; vim: filetype=racket
+
+#lang racket
+
+(require racket/date)
+
+(require http-client)
+(require rfc3339-old)
+
+(struct msg  (tm_epoch tm_rfc3339 nick text))
+(struct feed (nick uri))
+
+(define (msg<-toks nick toks)
+  (define tm_rfc3339 (list-ref toks 0))
+  (define tok_text   (list-ref toks 1))
+  (define t (string->rfc3339-record tm_rfc3339))
+  ; TODO handle tz offset
+  (define tm_epoch (find-seconds [rfc3339-record:second t]
+                                 [rfc3339-record:minute t]
+                                 [rfc3339-record:hour   t]
+                                 [rfc3339-record:mday   t]
+                                 [rfc3339-record:month  t]
+                                 [rfc3339-record:year   t]))
+  (msg tm_epoch tm_rfc3339 nick tok_text))
+
+(define (uri-fetch uri)
+  (log-info "GET ~a" uri)
+  (define resp (http-get uri))
+  (define status (http-response-code resp))
+  (define body (http-response-body resp))
+  (log-debug "finished GET ~a status:~a  body length:~a"
+             uri status (string-length body))
+  ; TODO Handle redirects
+  (if (= status 200) body (raise status)))
+
+(define re-msg-begin
+  ; TODO Zulu offset. Maybe in several formats. Which ones?
+  (let ([timestamp "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"])
+    (pregexp (string-append "^" timestamp))))
+
+(define (msg-print odd m)
+  (printf "~a \033[1;37m<~a>\033[0m \033[0;~am~a\033[0m~n"
+          (date->string (seconds->date [msg-tm_epoch m]) #t)
+          [msg-nick m]
+          [if odd 36 33]
+          [msg-text m]))
+
+(define (timeline-print timeline)
+  (for ([msg timeline]
+        [i   (in-naturals)])
+    (msg-print (odd? i) msg)))
+
+(define (str->lines str)
+  (string-split str (regexp "[\r\n]+")))
+
+(define (str->msgs nick str)
+  (let* ([lines
+           (str->lines str)]
+         [msg_lines
+           (filter (λ (l) (regexp-match? re-msg-begin l)) lines)]
+         [msgs
+           (begin
+             (log-debug "nick:~a  lines:~a  msg_lines:~a"
+                        nick
+                        (length lines)
+                        (length msg_lines))
+             (filter-map
+               (λ (line)
+                  (define toks (string-split line (regexp "\t+")))
+                  (if (= 2 (length toks))
+                    (msg<-toks nick toks)
+                    #f)
+                  )
+               msg_lines))])
+    msgs))
+
+(define (timeline feeds)
+  (let* ([timelines
+           (filter-map
+             (λ (feed)
+                (log-info "processing feed nick:~a uri:~a"
+                          (feed-nick feed)
+                          (feed-uri feed))
+                (with-handlers
+                  ([exn:fail:network?
+                     (λ (e)
+                        (log-error "network error nick:~a uri:~a  exn:~a"
+                                   (feed-nick feed)
+                                   (feed-uri feed)
+                                   e)
+                        #f)]
+                   [integer?
+                     (λ (status)
+                        (log-error "http error nick:~a uri:~a  status:~a"
+                                   (feed-nick feed)
+                                   (feed-uri feed)
+                                   status)
+                        #f)])
+                  (str->msgs [feed-nick feed] [uri-fetch (feed-uri feed)])))
+             feeds)]
+         [timeline
+           (append* timelines)]
+         [timeline
+           (sort timeline (λ (a b) [< (msg-tm_epoch a) (msg-tm_epoch b)]))])
+    timeline))
+
+(define (we-are-twtxt)
+  (let* ([uri
+           "https://raw.githubusercontent.com/mdom/we-are-twtxt/master/we-are-twtxt.txt"]
+         [payload
+           (uri-fetch uri)]
+         [lines
+           (str->lines payload)]
+         [feeds
+           (map (λ (line)
+                   (define toks (string-split line))
+                   (feed
+                     [list-ref toks 0]
+                     [list-ref toks 1]))
+                lines)])
+    feeds))
+
+(define (logging)
+  (define logger (make-logger #f #f 'debug #f))
+  (define log-chan (make-log-receiver logger 'debug))
+  (void (thread (λ ()
+                   [date-display-format 'iso-8601]
+                   [let loop ()
+                     (define data  (sync log-chan))
+                     (define level (vector-ref data 0))
+                     (define msg   (vector-ref data 1))
+                     (define ts    (date->string (current-date) #t))
+                     (eprintf "~a [~a] ~a~n" ts level msg)
+                     (loop)])))
+  (current-logger logger))
+
+(define (main)
+  (logging)
+  (define feeds (we-are-twtxt))
+  (current-http-response-auto #f)
+  (current-http-user-agent "tt 0.0.0")
+  (date-display-format 'rfc2822)
+  (timeline-print (timeline feeds)))
+
+(main)
