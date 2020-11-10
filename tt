@@ -16,6 +16,7 @@
 ; TODO filter on hashtags
 ; TODO query language
 ; TODO concurrency
+; TODO log colors by level
 
 #lang racket
 
