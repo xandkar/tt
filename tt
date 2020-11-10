@@ -10,6 +10,8 @@
 ; TODO named timelines
 ; TODO CLI params
 ; TODO config files
+; TODO parse mentions:
+; - @<source.nick source.url> | @<source.url>
 ; TODO highlight mentions
 ; TODO filter on mentions
 ; TODO highlight hashtags
@@ -23,10 +25,14 @@
 ; - r | read
 ;   - see timeline ops above
 ; - w | write
+;   - arg or stdin
 ;   - nick expand to URI
 ; - q | query
 ;   - see timeline ops above
 ;   - see hashtag and channels above
+; - d | download
+; - u | upload
+;   - calls user-configured command to upload user's own feed file to their server
 ; TODO user-agent format: <client>/<version> (+<source.url>; @<source.nick>)
 ;   - requires configurability
 ;   - ref: https://twtxt.readthedocs.io/en/latest/user/discoverability.html
