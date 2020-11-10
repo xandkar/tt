@@ -83,35 +83,31 @@
         [i   (in-naturals)])
     (msg-print (odd? i) msg)))
 
+(define (feed->msgs feed)
+  (log-info "downloading feed nick:~a uri:~a"
+            (feed-nick feed)
+            (feed-uri feed))
+  (with-handlers
+    ([exn:fail:network?
+       (λ (e)
+          (log-error "network error nick:~a uri:~a  exn:~a"
+                     (feed-nick feed)
+                     (feed-uri feed)
+                     e)
+          #f)]
+     [integer?
+       (λ (status)
+          (log-error "http error nick:~a uri:~a  status:~a"
+                     (feed-nick feed)
+                     (feed-uri feed)
+                     status)
+          #f)])
+    (str->msgs [feed-nick feed] [uri-fetch (feed-uri feed)])))
+
+; TODO timeline contract : time-sorted list of messages
 (define (timeline feeds)
-  (let* ([timelines
-           (filter-map
-             (λ (feed)
-                (log-info "processing feed nick:~a uri:~a"
-                          (feed-nick feed)
-                          (feed-uri feed))
-                (with-handlers
-                  ([exn:fail:network?
-                     (λ (e)
-                        (log-error "network error nick:~a uri:~a  exn:~a"
-                                   (feed-nick feed)
-                                   (feed-uri feed)
-                                   e)
-                        #f)]
-                   [integer?
-                     (λ (status)
-                        (log-error "http error nick:~a uri:~a  status:~a"
-                                   (feed-nick feed)
-                                   (feed-uri feed)
-                                   status)
-                        #f)])
-                  (str->msgs [feed-nick feed] [uri-fetch (feed-uri feed)])))
-             feeds)]
-         [timeline
-           (append* timelines)]
-         [timeline
-           (sort timeline (λ (a b) [< (msg-tm_epoch a) (msg-tm_epoch b)]))])
-    timeline))
+  (sort (append* (filter-map feed->msgs feeds))
+        (λ (a b) [< (msg-tm_epoch a) (msg-tm_epoch b)])))
 
 (define (we-are-twtxt)
   (let* ([uri
