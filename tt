@@ -1,6 +1,21 @@
 #! /usr/bin/env racket
 ; vim: filetype=racket
 
+; TODO write
+; TODO caching (use cache by default, unless explicitly asked for update)
+; TODO timeline limits
+; TODO user-defined feed sets (a la twitter lists)
+; TODO feed set operations
+; TODO timeline as a result of a query (feed set op + filter expressions)
+; TODO named timelines
+; TODO CLI params
+; TODO config files
+; TODO highlight mentions
+; TODO filter on mentions
+; TODO highlight hashtags
+; TODO filter on hashtags
+; TODO query language
+
 #lang racket
 
 (require racket/date)
