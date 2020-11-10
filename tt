@@ -70,7 +70,9 @@
                   (define toks (string-split line (regexp "\t+")))
                   (if (= 2 (length toks))
                     (msg<-toks nick toks)
-                    #f)
+                    (begin
+                      (log-warning "Invalid msg from nick:~a, msg:~a" nick line)
+                      #f))
                   )
                msg_lines))])
     msgs))
