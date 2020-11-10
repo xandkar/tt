@@ -14,9 +14,11 @@
 ; TODO filter on mentions
 ; TODO highlight hashtags
 ; TODO filter on hashtags
+; TODO hashtags as channels? initial hashtag special?
 ; TODO query language
 ; TODO concurrency
-; TODO log colors by level
+; TODO console logger colors by level ('error)
+; TODO file logger ('debug)
 
 #lang racket
 
