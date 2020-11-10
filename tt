@@ -19,6 +19,14 @@
 ; TODO concurrency
 ; TODO console logger colors by level ('error)
 ; TODO file logger ('debug)
+; TODO commands:
+; - r | read
+;   - see timeline ops above
+; - w | write
+;   - nick expand to URI
+; - q | query
+;   - see timeline ops above
+;   - see hashtag and channels above
 
 #lang racket
 
