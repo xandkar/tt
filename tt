@@ -42,7 +42,7 @@
 (require http-client)
 (require rfc3339-old)
 
-(struct msg  (tm_epoch tm_rfc3339 nick uri text))
+(struct msg  (ts_epoch ts_rfc3339 nick uri text))
 (struct feed (nick uri))
 
 (define (concurrent-filter-map num_workers f xs)
@@ -88,7 +88,7 @@
       ['single-line "~a  \033[1;37m<~a ~a>\033[0m  \033[0;~am~a\033[0m~n"]
       ['multi-line  "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"]
       [_           (raise (format "Invalid output format: ~a" out-format))])
-    (date->string (seconds->date [msg-tm_epoch msg]) #t)
+    (date->string (seconds->date [msg-ts_epoch msg]) #t)
     (msg-nick msg)
     (msg-uri  msg)
     (if odd 36 33)
@@ -109,17 +109,17 @@
           (log-warning "Invalid msg line from nick:~a, msg:~a" nick str)
           #f)
         (let*
-          ([tm_rfc3339 (list-ref toks 0)]
-           [tok_text   (list-ref toks 1)]
-           [t (string->rfc3339-record tm_rfc3339)]
+          ([ts_rfc3339 (first  toks)]
+           [text       (second toks)]
+           [t          (string->rfc3339-record ts_rfc3339)]
            ; TODO handle tz offset
-           [tm_epoch (find-seconds [rfc3339-record:second t]
+           [ts_epoch (find-seconds [rfc3339-record:second t]
                                    [rfc3339-record:minute t]
                                    [rfc3339-record:hour   t]
                                    [rfc3339-record:mday   t]
                                    [rfc3339-record:month  t]
                                    [rfc3339-record:year   t])])
-          (msg tm_epoch tm_rfc3339 nick uri tok_text))))))
+          (msg ts_epoch ts_rfc3339 nick uri text))))))
 
 (define (str->lines str)
   (string-split str (regexp "[\r\n]+")))
@@ -167,14 +167,12 @@
 ; TODO timeline contract : time-sorted list of messages
 (define (timeline num_workers feeds)
   (sort (append* (concurrent-filter-map num_workers feed->msgs feeds))
-        (λ (a b) [< (msg-tm_epoch a) (msg-tm_epoch b)])))
+        (λ (a b) [< (msg-ts_epoch a) (msg-ts_epoch b)])))
 
 (define (str->feed str)
   ; TODO validation
   (define toks (string-split str))
-  (feed
-    [list-ref toks 0]
-    [list-ref toks 1]))
+  (apply feed toks))
 
 (define (str->feeds str)
   (map str->feed (str->lines str)))
@@ -205,9 +203,9 @@
   (define user-agent
     (let*
       ([prog-name      "tt"]
-       [prog-version   "0.3.0"]
+       [prog-version   "0.3.1"]
        [user-feed-file (expand-user-path "~/twtxt-me.txt")]
-       [user           (list-ref (file->feeds user-feed-file) 0)])
+       [user           (first (file->feeds user-feed-file))])
       (format "~a/~a (+~a; @~a)"
               prog-name
               prog-version
