@@ -5,8 +5,7 @@
 ; TODO write
 ; TODO caching (use cache by default, unless explicitly asked for update)
 ; TODO timeline limits
-; TODO user-defined feed sets (a la twitter lists)
-; TODO feed set operations
+; TODO feed set operations (perhaps better done externally?)
 ; TODO timeline as a result of a query (feed set op + filter expressions)
 ; TODO named timelines
 ; TODO CLI params
@@ -172,22 +171,23 @@
   (sort (append* (concurrent-filter-map num_workers feed->msgs feeds))
         (λ (a b) [< (msg-tm_epoch a) (msg-tm_epoch b)])))
 
+(define (str->feed str)
+  ; TODO validation
+  (define toks (string-split str))
+  (feed
+    [list-ref toks 0]
+    [list-ref toks 1]))
+
+(define (str->feeds str)
+  (map str->feed (str->lines str)))
+
+(define (file->feeds filename)
+  (str->feeds (file->string filename)))
+
 (define (we-are-twtxt)
-  (let* ([uri
-           "https://raw.githubusercontent.com/mdom/we-are-twtxt/master/we-are-twtxt.txt"]
-         [payload
-           (uri-fetch uri)]
-         [lines
-           (str->lines payload)]
-         [feeds
-           (map (λ (line)
-                   ; TODO validation
-                   (define toks (string-split line))
-                   (feed
-                     [list-ref toks 0]
-                     [list-ref toks 1]))
-                lines)])
-    feeds))
+  (define uri
+    "https://raw.githubusercontent.com/mdom/we-are-twtxt/master/we-are-twtxt.txt")
+  (str->feeds (uri-fetch uri)))
 
 (define (setup-logging)
   (define logger (make-logger #f #f 'debug #f))
@@ -206,10 +206,14 @@
 (define (main)
   (setup-logging)
   (current-http-response-auto #f)
-  (current-http-user-agent "xandkar/tt 0.1.0")
+  (current-http-user-agent "xandkar/tt 0.2.0")
   (date-display-format 'rfc2822)
 
-  (define feeds (we-are-twtxt))
+  (define args (current-command-line-arguments))
+  (define feeds
+    (if (vector-empty? args)
+      (we-are-twtxt)
+      (file->feeds (vector-ref args 0))))
   (define out-format 'multi-line)
   (define num_workers 15) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
   (timeline-print out-format (timeline num_workers feeds)))
