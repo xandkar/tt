@@ -1,6 +1,7 @@
 #! /usr/bin/env racket
 ; vim: filetype=racket
 
+; TODO optional text wrap
 ; TODO write
 ; TODO caching (use cache by default, unless explicitly asked for update)
 ; TODO timeline limits
