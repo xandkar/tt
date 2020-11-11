@@ -46,6 +46,7 @@
 (struct feed (nick uri))
 
 (define (concurrent-filter-map num_workers f xs)
+  ; TODO switch from mailboxes to channels
   (define (make-worker id f)
     (define parent (current-thread))
     (λ ()
