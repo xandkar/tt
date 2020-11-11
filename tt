@@ -34,9 +34,6 @@
 ; - d | download
 ; - u | upload
 ;   - calls user-configured command to upload user's own feed file to their server
-; TODO user-agent format: <client>/<version> (+<source.url>; @<source.nick>)
-;   - requires configurability
-;   - ref: https://twtxt.readthedocs.io/en/latest/user/discoverability.html
 
 #lang racket
 
@@ -204,9 +201,21 @@
   (current-logger logger))
 
 (define (main)
+  (define user-agent
+    (let*
+      ([prog-name      "tt"]
+       [prog-version   "0.3.0"]
+       [user-feed-file (expand-user-path "~/twtxt-me.txt")]
+       [user           (list-ref (file->feeds user-feed-file) 0)])
+      (format "~a/~a (+~a; @~a)"
+              prog-name
+              prog-version
+              (feed-uri user)
+              (feed-nick user))))
+
   (setup-logging)
   (current-http-response-auto #f)
-  (current-http-user-agent "xandkar/tt 0.2.0")
+  (current-http-user-agent user-agent)
   (date-display-format 'rfc2822)
 
   (define args (current-command-line-arguments))
