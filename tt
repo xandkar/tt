@@ -8,17 +8,6 @@
 ; TODO feed set operations
 ; TODO timeline as a result of a query (feed set op + filter expressions)
 ; TODO named timelines
-; TODO alt timeline formats: irc-like | email-like
-;
-; - irc-like:
-;       <timestamp> <nick> <msg><lf>
-;
-; - email-like:
-;       <timestamp>
-;       <nick> <uri>
-;       <msg>
-;       <lf><lf>
-;
 ; TODO CLI params
 ; TODO config files
 ; TODO parse mentions:
@@ -55,21 +44,26 @@
 (require http-client)
 (require rfc3339-old)
 
-(struct msg  (tm_epoch tm_rfc3339 nick text))
+(struct msg  (tm_epoch tm_rfc3339 nick uri text))
 (struct feed (nick uri))
 
-(define (msg-print odd m)
-  (printf "~a \033[1;37m<~a>\033[0m \033[0;~am~a\033[0m~n"
-          (date->string (seconds->date [msg-tm_epoch m]) #t)
-          [msg-nick m]
-          [if odd 36 33]
-          [msg-text m]))
+(define (msg-print out-format odd msg)
+  (printf
+    (match out-format
+      ['single-line "~a  \033[1;37m<~a ~a>\033[0m  \033[0;~am~a\033[0m~n"]
+      ['multi-line  "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"]
+      [_           (raise (format "Invalid output format: ~a" out-format))])
+    (date->string (seconds->date [msg-tm_epoch msg]) #t)
+    (msg-nick msg)
+    (msg-uri  msg)
+    (if odd 36 33)
+    (msg-text msg)))
 
 (define re-msg-begin
   ; TODO Zulu offset. Maybe in several formats. Which ones?
   (pregexp "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"))
 
-(define (str->msg nick str)
+(define (str->msg nick uri str)
   (if (not (regexp-match? re-msg-begin str))
     (begin
       (log-debug "Non-msg line from nick:~a, line:~a" nick str)
@@ -90,13 +84,13 @@
                                    [rfc3339-record:mday   t]
                                    [rfc3339-record:month  t]
                                    [rfc3339-record:year   t])])
-          (msg tm_epoch tm_rfc3339 nick tok_text))))))
+          (msg tm_epoch tm_rfc3339 nick uri tok_text))))))
 
 (define (str->lines str)
   (string-split str (regexp "[\r\n]+")))
 
-(define (str->msgs nick str)
-  (filter-map (λ (line) (str->msg nick line)) (str->lines str)))
+(define (str->msgs nick uri str)
+  (filter-map (λ (line) (str->msg nick uri line)) (str->lines str)))
 
 (define (uri-fetch uri)
   (log-info "GET ~a" uri)
@@ -108,10 +102,10 @@
   ; TODO Handle redirects
   (if (= status 200) body (raise status)))
 
-(define (timeline-print timeline)
+(define (timeline-print out-format timeline)
   (for ([msg timeline]
         [i   (in-naturals)])
-    (msg-print (odd? i) msg)))
+    (msg-print out-format (odd? i) msg)))
 
 (define (feed->msgs feed)
   (log-info "downloading feed nick:~a uri:~a"
@@ -132,7 +126,8 @@
                      (feed-uri feed)
                      status)
           #f)])
-    (str->msgs [feed-nick feed] [uri-fetch (feed-uri feed)])))
+    (define uri (feed-uri feed))
+    (str->msgs [feed-nick feed] uri [uri-fetch uri])))
 
 ; TODO timeline contract : time-sorted list of messages
 (define (timeline feeds)
@@ -177,6 +172,7 @@
   (date-display-format 'rfc2822)
 
   (define feeds (we-are-twtxt))
-  (timeline-print (timeline feeds)))
+  (define out-format 'multi-line)
+  (timeline-print out-format (timeline feeds)))
 
 (main)
