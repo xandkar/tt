@@ -73,12 +73,9 @@
                             [(cons x xs) (begin
                                            (thread-send thd (cons 'unit x))
                                            (dispatch ws xs ys))])])))
-  (define workers
-    (range 1 (add1 num_workers)))
-  (define threads
-    (map (λ (id) (thread (make-worker id f))) workers))
-  (define results
-    (dispatch workers xs '()))
+  (define workers (range num_workers))
+  (define threads (map (λ (id) (thread (make-worker id f))) workers))
+  (define results (dispatch workers xs '()))
   (for-each thread-wait threads)
   results)
 
@@ -203,7 +200,7 @@
   (define user-agent
     (let*
       ([prog-name      "tt"]
-       [prog-version   "0.3.2"]
+       [prog-version   "0.3.3"]
        [prog-uri       "https://github.com/xandkar/tt"]
        [user-feed-file (expand-user-path "~/twtxt-me.txt")]
        [user
