@@ -203,14 +203,16 @@
   (define user-agent
     (let*
       ([prog-name      "tt"]
-       [prog-version   "0.3.1"]
+       [prog-version   "0.3.2"]
+       [prog-uri       "https://github.com/xandkar/tt"]
        [user-feed-file (expand-user-path "~/twtxt-me.txt")]
-       [user           (first (file->feeds user-feed-file))])
-      (format "~a/~a (+~a; @~a)"
-              prog-name
-              prog-version
-              (feed-uri user)
-              (feed-nick user))))
+       [user
+         (if (file-exists? user-feed-file)
+           (let ([user (first (file->feeds user-feed-file))])
+             (format "+~a; @~a" (feed-uri user) (feed-nick user)))
+           (format "+~a" prog-uri))]
+       )
+      (format "~a/~a (~a)" prog-name prog-version user)))
 
   (setup-logging)
   (current-http-response-auto #f)
