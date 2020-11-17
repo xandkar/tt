@@ -4,6 +4,9 @@
 ; TODO optional text wrap
 ; TODO write
 ; TODO caching (use cache by default, unless explicitly asked for update)
+; - [x] value --> cache
+; - [ ] value <-- cache
+;   requires: commands
 ; TODO timeline limits
 ; TODO feed set operations (perhaps better done externally?)
 ; TODO timeline as a result of a query (feed set op + filter expressions)
@@ -37,6 +40,7 @@
 
 #lang racket
 
+(require openssl/sha1)
 (require racket/date)
 
 (require http-client)
@@ -124,6 +128,12 @@
 (define (str->msgs nick uri str)
   (filter-map (λ (line) (str->msg nick uri line)) (str->lines str)))
 
+(define (hash-sha1 str)
+  (define in (open-input-string str))
+  (define digest (sha1 in))
+  (close-input-port in)
+  digest)
+
 (define (uri-fetch uri)
   (log-info "GET ~a" uri)
   (define resp (http-get uri))
@@ -132,7 +142,18 @@
   (log-debug "finished GET ~a status:~a  body length:~a"
              uri status (string-length body))
   ; TODO Handle redirects
-  (if (= status 200) body (raise status)))
+  (if (= status 200)
+    (let*
+      ([url-digest
+         (hash-sha1 uri)]
+       [cache-file-path
+         (expand-user-path (string-append "~/.tt/cache/" url-digest))])
+      (display-to-file
+        body cache-file-path
+        #:exists 'replace)
+      body)
+    ; TODO A more-informative exception
+    (raise status)))
 
 (define (timeline-print out-format timeline)
   (for ([msg timeline]
@@ -200,7 +221,7 @@
   (define user-agent
     (let*
       ([prog-name      "tt"]
-       [prog-version   "0.3.3"]
+       [prog-version   "0.3.4"]
        [prog-uri       "https://github.com/xandkar/tt"]
        [user-feed-file (expand-user-path "~/twtxt-me.txt")]
        [user
