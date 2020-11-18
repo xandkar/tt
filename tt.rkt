@@ -43,6 +43,9 @@
 (require http-client)
 (require rfc3339-old)
 
+(module+ test
+  (require rackunit))
+
 (struct msg  (ts_epoch ts_rfc3339 nick uri text))
 (struct feed (nick uri))
 

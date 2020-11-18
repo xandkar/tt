@@ -2,6 +2,10 @@
 install:
 	raco pkg install
 
+.PHONY: test
+test:
+	raco test ./tt.rkt
+
 .PHONY: remove
 remove:
 	raco pkg remove tt
