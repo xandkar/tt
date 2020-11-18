@@ -1,6 +1,6 @@
 .PHONY: install
 install:
-	raco pkg install
+	raco pkg install --deps search-auto
 
 .PHONY: test
 test:
