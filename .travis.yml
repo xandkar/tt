@@ -1,0 +1,42 @@
+language: c
+
+sudo: false
+
+env:
+  global:
+    - RACKET_DIR=~/racket
+  matrix:
+    - RACKET_VERSION=6.3
+    - RACKET_VERSION=6.4
+    - RACKET_VERSION=6.5
+    - RACKET_VERSION=6.6
+    - RACKET_VERSION=6.7
+    - RACKET_VERSION=6.8
+    - RACKET_VERSION=6.9
+    - RACKET_VERSION=6.10
+    - RACKET_VERSION=6.11
+    - RACKET_VERSION=6.12
+    - RACKET_VERSION=7.0
+    - RACKET_VERSION=7.1
+    - RACKET_VERSION=7.2
+    - RACKET_VERSION=7.3
+    - RACKET_VERSION=7.4
+    - RACKET_VERSION=7.5
+    - RACKET_VERSION=7.6
+    - RACKET_VERSION=7.7
+    - RACKET_VERSION=7.8
+    - RACKET_VERSION=7.9
+    - RACKET_VERSION=HEAD
+
+matrix:
+  #allow_failures:
+  #  - env: RACKET_VERSION=HEAD
+  fast_finish: true
+
+install:
+  - bash <(curl https://raw.githubusercontent.com/greghendershott/travis-racket/master/install-racket.sh)
+  - export PATH="${RACKET_DIR}/bin:${PATH}"
+
+script:
+  - make install
+  - make test

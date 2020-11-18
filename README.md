@@ -2,6 +2,8 @@ tt
 ==
 A more-unixy [twtxt](https://github.com/buckket/twtxt) client.
 
+[![Build Status](https://travis-ci.org/xandkar/tt.svg?branch=master)](https://travis-ci.org/xandkar/tt)
+
 Doesn't force you to maintain a master "following" file (the way Twitter does),
 but let's you point it to any follow-file every time it runs.
 
