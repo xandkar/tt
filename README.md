@@ -11,6 +11,7 @@ combinations. Especially when paired with
 
 ![Screenshot](screenshot-multi.jpg)
 
+
 instructions
 ------------
 
@@ -24,3 +25,13 @@ instructions
 
 ### usage
 `tt (FOLLOW-FILE)`
+
+
+notes
+-----
+
+### LWW downloads
+Downloaded timelines are stored in `~/.tt/cache/<SHA1_OF_URI>`, but no attempt
+is made to preserve the previously-downloaded messages - each download
+overrites the previous. One of the implications is that authors can edit/delete
+history without you noticing.
