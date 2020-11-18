@@ -50,6 +50,7 @@
 (struct feed (nick uri))
 
 (define (concurrent-filter-map num_workers f xs)
+  ; TODO preserve order of elements OR communicate that reorder is expected
   ; TODO switch from mailboxes to channels
   (define (make-worker id f)
     (define parent (current-thread))
@@ -82,6 +83,15 @@
   (define results (dispatch workers xs '()))
   (for-each thread-wait threads)
   results)
+
+(module+ test
+  (define n-workers 10)
+  (define given (list
+                  (λ (x) (if (even? x) x #f))
+                  (range 11)))
+  (check-equal?
+    (sort (apply concurrent-filter-map (cons n-workers given)) <)
+    (sort (apply            filter-map                 given ) <)))
 
 (define (msg-print out-format odd msg)
   (printf
