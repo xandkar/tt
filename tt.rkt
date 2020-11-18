@@ -1,6 +1,3 @@
-#! /usr/bin/env racket
-; vim: filetype=racket
-
 ; TODO optional text wrap
 ; TODO write
 ; TODO caching (use cache by default, unless explicitly asked for update)
@@ -203,34 +200,34 @@
     "https://raw.githubusercontent.com/mdom/we-are-twtxt/master/we-are-twtxt.txt")
   (str->feeds (uri-fetch uri)))
 
-(define (setup-logging)
-  (define logger (make-logger #f #f 'debug #f))
-  (define log-chan (make-log-receiver logger 'debug))
-  (void (thread (λ ()
-                   [date-display-format 'iso-8601]
-                   [let loop ()
-                     (define data  (sync log-chan))
-                     (define level (vector-ref data 0))
-                     (define msg   (vector-ref data 1))
-                     (define ts    (date->string (current-date) #t))
-                     (eprintf "~a [~a] ~a~n" ts level msg)
-                     (loop)])))
-  (current-logger logger))
+(define user-agent
+  (let*
+    ([prog-name      "tt"]
+     [prog-version   "0.3.4"]
+     [prog-uri       "https://github.com/xandkar/tt"]
+     [user-feed-file (expand-user-path "~/twtxt-me.txt")]
+     [user
+       (if (file-exists? user-feed-file)
+         (let ([user (first (file->feeds user-feed-file))])
+           (format "+~a; @~a" (feed-uri user) (feed-nick user)))
+         (format "+~a" prog-uri))]
+     )
+    (format "~a/~a (~a)" prog-name prog-version user)))
 
-(define (main)
-  (define user-agent
-    (let*
-      ([prog-name      "tt"]
-       [prog-version   "0.3.4"]
-       [prog-uri       "https://github.com/xandkar/tt"]
-       [user-feed-file (expand-user-path "~/twtxt-me.txt")]
-       [user
-         (if (file-exists? user-feed-file)
-           (let ([user (first (file->feeds user-feed-file))])
-             (format "+~a; @~a" (feed-uri user) (feed-nick user)))
-           (format "+~a" prog-uri))]
-       )
-      (format "~a/~a (~a)" prog-name prog-version user)))
+(module+ main
+  (define (setup-logging)
+    (define logger (make-logger #f #f 'debug #f))
+    (define log-chan (make-log-receiver logger 'debug))
+    (void (thread (λ ()
+                     [date-display-format 'iso-8601]
+                     [let loop ()
+                       (define data  (sync log-chan))
+                       (define level (vector-ref data 0))
+                       (define msg   (vector-ref data 1))
+                       (define ts    (date->string (current-date) #t))
+                       (eprintf "~a [~a] ~a~n" ts level msg)
+                       (loop)])))
+    (current-logger logger))
 
   (setup-logging)
   (current-http-response-auto #f)
@@ -245,5 +242,3 @@
   (define out-format 'multi-line)
   (define num_workers 15) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
   (timeline-print out-format (timeline num_workers feeds)))
-
-(main)
