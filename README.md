@@ -1,6 +1,6 @@
 tt
 ==
-A more-unixy twtxt client.
+A more-unixy [twtxt](https://github.com/buckket/twtxt) client.
 
 Doesn't force you to maintain a master "following" file (the way Twitter does),
 but let's you point it to any follow-file every time it runs.
