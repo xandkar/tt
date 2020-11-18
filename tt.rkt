@@ -34,6 +34,9 @@
 ; - d | download
 ; - u | upload
 ;   - calls user-configured command to upload user's own feed file to their server
+;
+; Looks like a better CLI parser than "racket/cmdline":
+; https://docs.racket-lang.org/natural-cli/
 
 #lang racket
 
