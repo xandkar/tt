@@ -47,7 +47,7 @@
 (require rfc3339-old)
 
 (module+ test
-  (require rackunit))
+         (require rackunit))
 
 (struct msg  (ts_epoch ts_rfc3339 nick uri text))
 (struct feed (nick uri))
@@ -62,25 +62,25 @@
        (define (work)
          (thread-send parent (cons 'next self))
          (match (thread-receive)
-           ['done          (thread-send parent (cons 'exit id))]
-           [(cons 'unit x) (begin
-                             (define y (f x))
-                             (when y (thread-send parent (cons 'result y)))
-                             (work))]))
+                ['done          (thread-send parent (cons 'exit id))]
+                [(cons 'unit x) (begin
+                                  (define y (f x))
+                                  (when y (thread-send parent (cons 'result y)))
+                                  (work))]))
        (work)))
   (define (dispatch ws xs ys)
     (if (empty? ws)
-      ys
-      (match (thread-receive)
-        [(cons 'exit w)   (dispatch (remove w ws =) xs ys)]
-        [(cons 'result y) (dispatch ws xs (cons y ys))]
-        [(cons 'next thd) (match xs
-                            ['()         (begin
-                                           (thread-send thd 'done)
-                                           (dispatch ws xs ys))]
-                            [(cons x xs) (begin
-                                           (thread-send thd (cons 'unit x))
-                                           (dispatch ws xs ys))])])))
+        ys
+        (match (thread-receive)
+               [(cons 'exit w)   (dispatch (remove w ws =) xs ys)]
+               [(cons 'result y) (dispatch ws xs (cons y ys))]
+               [(cons 'next thd) (match xs
+                                        ['()         (begin
+                                                       (thread-send thd 'done)
+                                                       (dispatch ws xs ys))]
+                                        [(cons x xs) (begin
+                                                       (thread-send thd (cons 'unit x))
+                                                       (dispatch ws xs ys))])])))
   (define workers (range num_workers))
   (define threads (map (λ (id) (thread (make-worker id f))) workers))
   (define results (dispatch workers xs '()))
@@ -88,20 +88,20 @@
   results)
 
 (module+ test
-  (define n-workers 10)
-  (define given (list
-                  (λ (x) (if (even? x) x #f))
-                  (range 11)))
-  (check-equal?
-    (sort (apply concurrent-filter-map (cons n-workers given)) <)
-    (sort (apply            filter-map                 given ) <)))
+         (define n-workers 10)
+         (define given (list
+                         (λ (x) (if (even? x) x #f))
+                         (range 11)))
+         (check-equal?
+           (sort (apply concurrent-filter-map (cons n-workers given)) <)
+           (sort (apply            filter-map                 given ) <)))
 
 (define (msg-print out-format odd msg)
   (printf
     (match out-format
-      ['single-line "~a  \033[1;37m<~a ~a>\033[0m  \033[0;~am~a\033[0m~n"]
-      ['multi-line  "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"]
-      [_           (raise (format "Invalid output format: ~a" out-format))])
+           ['single-line "~a  \033[1;37m<~a ~a>\033[0m  \033[0;~am~a\033[0m~n"]
+           ['multi-line  "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"]
+           [_           (raise (format "Invalid output format: ~a" out-format))])
     (date->string (seconds->date [msg-ts_epoch msg]) #t)
     (msg-nick msg)
     (msg-uri  msg)
@@ -114,26 +114,26 @@
 
 (define (str->msg nick uri str)
   (if (not (regexp-match? re-msg-begin str))
-    (begin
-      (log-debug "Non-msg line from nick:~a, line:~a" nick str)
-      #f)
-    (let ([toks (string-split str (regexp "\t+"))])
-      (if (not (= 2 (length toks)))
-        (begin
-          (log-warning "Invalid msg line from nick:~a, msg:~a" nick str)
-          #f)
-        (let*
-          ([ts_rfc3339 (first  toks)]
-           [text       (second toks)]
-           [t          (string->rfc3339-record ts_rfc3339)]
-           ; TODO handle tz offset
-           [ts_epoch (find-seconds [rfc3339-record:second t]
-                                   [rfc3339-record:minute t]
-                                   [rfc3339-record:hour   t]
-                                   [rfc3339-record:mday   t]
-                                   [rfc3339-record:month  t]
-                                   [rfc3339-record:year   t])])
-          (msg ts_epoch ts_rfc3339 nick uri text))))))
+      (begin
+        (log-debug "Non-msg line from nick:~a, line:~a" nick str)
+        #f)
+      (let ([toks (string-split str (regexp "\t+"))])
+           (if (not (= 2 (length toks)))
+               (begin
+                 (log-warning "Invalid msg line from nick:~a, msg:~a" nick str)
+                 #f)
+               (let*
+                 ([ts_rfc3339 (first  toks)]
+                  [text       (second toks)]
+                  [t          (string->rfc3339-record ts_rfc3339)]
+                  ; TODO handle tz offset
+                  [ts_epoch (find-seconds [rfc3339-record:second t]
+                                          [rfc3339-record:minute t]
+                                          [rfc3339-record:hour   t]
+                                          [rfc3339-record:mday   t]
+                                          [rfc3339-record:month  t]
+                                          [rfc3339-record:year   t])])
+                 (msg ts_epoch ts_rfc3339 nick uri text))))))
 
 (define (str->lines str)
   (string-split str (regexp "[\r\n]+")))
@@ -156,22 +156,22 @@
              uri status (string-length body))
   ; TODO Handle redirects
   (if (= status 200)
-    (let*
-      ([url-digest
-         (hash-sha1 uri)]
-       [cache-file-path
-         (expand-user-path (string-append "~/.tt/cache/" url-digest))])
-      (display-to-file
-        body cache-file-path
-        #:exists 'replace)
-      body)
-    ; TODO A more-informative exception
-    (raise status)))
+      (let*
+        ([url-digest
+           (hash-sha1 uri)]
+         [cache-file-path
+           (expand-user-path (string-append "~/.tt/cache/" url-digest))])
+        (display-to-file
+          body cache-file-path
+          #:exists 'replace)
+        body)
+      ; TODO A more-informative exception
+      (raise status)))
 
 (define (timeline-print out-format timeline)
   (for ([msg timeline]
         [i   (in-naturals)])
-    (msg-print out-format (odd? i) msg)))
+       (msg-print out-format (odd? i) msg)))
 
 (define (feed->msgs feed)
   (log-info "downloading feed nick:~a uri:~a"
@@ -222,40 +222,40 @@
      [user-feed-file (expand-user-path "~/twtxt-me.txt")]
      [user
        (if (file-exists? user-feed-file)
-         (let ([user (first (file->feeds user-feed-file))])
-           (format "+~a; @~a" (feed-uri user) (feed-nick user)))
-         (format "+~a" prog-uri))]
+           (let ([user (first (file->feeds user-feed-file))])
+                (format "+~a; @~a" (feed-uri user) (feed-nick user)))
+           (format "+~a" prog-uri))]
      )
     (format "~a/~a (~a)" prog-name prog-version user)))
 
 (module+ main
-  (require setup/getinfo)
+         (require setup/getinfo)
 
-  (let* ([logger       (make-logger #f #f 'debug #f)]
-         [log-receiver (make-log-receiver logger 'debug)])
-    (void (thread (λ ()
-                     [date-display-format 'iso-8601]
-                     [let loop ()
-                       (define data  (sync log-receiver))
-                       (define level (vector-ref data 0))
-                       (define msg   (vector-ref data 1))
-                       (define ts    (date->string (current-date) #t))
-                       (eprintf "~a [~a] ~a~n" ts level msg)
-                       (loop)])))
-    (current-logger logger))
-  (current-http-response-auto #f)
-  (let* ([prog-name    "tt"]
-         [prog-version ((get-info (list prog-name)) 'version)]
-         [user-agent   (user-agent prog-name prog-version)])
-    (current-http-user-agent user-agent))
-  (date-display-format 'rfc2822)
-  (let ([feeds
-          (let ([args (current-command-line-arguments)])
-            (if (= 0 (vector-length args))
-              (we-are-twtxt)
-              (file->feeds (vector-ref args 0))))]
-        [out-format
-          'multi-line]
-        [num_workers
-          15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
-    (timeline-print out-format (timeline num_workers feeds))))
+         (let* ([logger       (make-logger #f #f 'debug #f)]
+                [log-receiver (make-log-receiver logger 'debug)])
+               (void (thread (λ ()
+                                [date-display-format 'iso-8601]
+                                [let loop ()
+                                     (define data  (sync log-receiver))
+                                     (define level (vector-ref data 0))
+                                     (define msg   (vector-ref data 1))
+                                     (define ts    (date->string (current-date) #t))
+                                     (eprintf "~a [~a] ~a~n" ts level msg)
+                                     (loop)])))
+               (current-logger logger))
+         (current-http-response-auto #f)
+         (let* ([prog-name    "tt"]
+                [prog-version ((get-info (list prog-name)) 'version)]
+                [user-agent   (user-agent prog-name prog-version)])
+               (current-http-user-agent user-agent))
+         (date-display-format 'rfc2822)
+         (let ([feeds
+                 (let ([args (current-command-line-arguments)])
+                      (if (= 0 (vector-length args))
+                          (we-are-twtxt)
+                          (file->feeds (vector-ref args 0))))]
+               [out-format
+                 'multi-line]
+               [num_workers
+                 15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
+              (timeline-print out-format (timeline num_workers feeds))))
