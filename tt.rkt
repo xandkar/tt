@@ -88,13 +88,11 @@
   results)
 
 (module+ test
-         (define n-workers 10)
-         (define given (list
-                         (λ (x) (if (even? x) x #f))
-                         (range 11)))
-         (check-equal?
-           (sort (apply concurrent-filter-map (cons n-workers given)) <)
-           (sort (apply            filter-map                 given ) <)))
+         (let* ([f        (λ (x) (if (even? x) x #f))]
+                [xs       (range 11)]
+                [actual   (sort (concurrent-filter-map 10 f xs) <)]
+                [expected (sort (           filter-map    f xs) <)])
+               (check-equal? actual expected "concurrent-filter-map")))
 
 (define (msg-print out-format odd msg)
   (printf
