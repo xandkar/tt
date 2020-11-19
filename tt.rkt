@@ -216,11 +216,9 @@
     "https://raw.githubusercontent.com/mdom/we-are-twtxt/master/we-are-twtxt.txt")
   (str->feeds (uri-fetch uri)))
 
-(define user-agent
+(define (user-agent prog-name prog-version)
   (let*
-    ([prog-name      "tt"]
-     [prog-version   "0.3.5"]
-     [prog-uri       "https://github.com/xandkar/tt"]
+    ([prog-uri       "https://github.com/xandkar/tt"]
      [user-feed-file (expand-user-path "~/twtxt-me.txt")]
      [user
        (if (file-exists? user-feed-file)
@@ -231,6 +229,7 @@
     (format "~a/~a (~a)" prog-name prog-version user)))
 
 (module+ main
+  (require setup/getinfo)
   (define (setup-logging)
     (define logger (make-logger #f #f 'debug #f))
     (define log-chan (make-log-receiver logger 'debug))
@@ -247,7 +246,10 @@
 
   (setup-logging)
   (current-http-response-auto #f)
-  (current-http-user-agent user-agent)
+  (let* ([prog-name    "tt"]
+         [prog-version ((get-info (list prog-name)) 'version)]
+         [user-agent   (user-agent prog-name prog-version)])
+    (current-http-user-agent user-agent))
   (date-display-format 'rfc2822)
 
   (define args (current-command-line-arguments))
