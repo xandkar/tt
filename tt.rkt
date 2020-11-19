@@ -133,8 +133,40 @@
                                           [rfc3339-record:year   t])])
                  (msg ts_epoch ts_rfc3339 nick uri text))))))
 
+(module+ test
+         (let* ([ts       "2020-11-18T22:22:09-0500"]
+                [tab      "	"]
+                [text     "Lorem ipsum"]
+                [nick     "foo"]
+                [uri      "bar"]
+                [actual   (str->msg nick uri (string-join (list ts text) tab))]
+                [expected (msg 1605756129 ts nick uri text)])
+               (check-equal?
+                 (msg-ts_epoch actual)
+                 (msg-ts_epoch expected)
+                 "str->msg ts_epoch")
+               (check-equal?
+                 (msg-ts_rfc3339 actual)
+                 (msg-ts_rfc3339 expected)
+                 "str->msg ts_rfc3339")
+               (check-equal?
+                 (msg-nick actual)
+                 (msg-nick expected)
+                 "str->msg nick")
+               (check-equal?
+                 (msg-uri actual)
+                 (msg-uri expected)
+                 "str->msg uri")
+               (check-equal?
+                 (msg-text actual)
+                 (msg-text expected)
+                 "str->msg text")))
+
 (define (str->lines str)
   (string-split str (regexp "[\r\n]+")))
+
+(module+ test
+  (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
 
 (define (str->msgs nick uri str)
   (filter-map (λ (line) (str->msg nick uri line)) (str->lines str)))
