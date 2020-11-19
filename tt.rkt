@@ -219,7 +219,7 @@
 (define user-agent
   (let*
     ([prog-name      "tt"]
-     [prog-version   "0.3.4"]
+     [prog-version   "0.3.5"]
      [prog-uri       "https://github.com/xandkar/tt"]
      [user-feed-file (expand-user-path "~/twtxt-me.txt")]
      [user
@@ -252,7 +252,7 @@
 
   (define args (current-command-line-arguments))
   (define feeds
-    (if (vector-empty? args)
+    (if (= 0 (vector-length args))
       (we-are-twtxt)
       (file->feeds (vector-ref args 0))))
   (define out-format 'multi-line)
