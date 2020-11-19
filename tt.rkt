@@ -230,33 +230,32 @@
 
 (module+ main
   (require setup/getinfo)
-  (define (setup-logging)
-    (define logger (make-logger #f #f 'debug #f))
-    (define log-chan (make-log-receiver logger 'debug))
+
+  (let* ([logger       (make-logger #f #f 'debug #f)]
+         [log-receiver (make-log-receiver logger 'debug)])
     (void (thread (λ ()
                      [date-display-format 'iso-8601]
                      [let loop ()
-                       (define data  (sync log-chan))
+                       (define data  (sync log-receiver))
                        (define level (vector-ref data 0))
                        (define msg   (vector-ref data 1))
                        (define ts    (date->string (current-date) #t))
                        (eprintf "~a [~a] ~a~n" ts level msg)
                        (loop)])))
     (current-logger logger))
-
-  (setup-logging)
   (current-http-response-auto #f)
   (let* ([prog-name    "tt"]
          [prog-version ((get-info (list prog-name)) 'version)]
          [user-agent   (user-agent prog-name prog-version)])
     (current-http-user-agent user-agent))
   (date-display-format 'rfc2822)
-
-  (define args (current-command-line-arguments))
-  (define feeds
-    (if (= 0 (vector-length args))
-      (we-are-twtxt)
-      (file->feeds (vector-ref args 0))))
-  (define out-format 'multi-line)
-  (define num_workers 15) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
-  (timeline-print out-format (timeline num_workers feeds)))
+  (let ([feeds
+          (let ([args (current-command-line-arguments)])
+            (if (= 0 (vector-length args))
+              (we-are-twtxt)
+              (file->feeds (vector-ref args 0))))]
+        [out-format
+          'multi-line]
+        [num_workers
+          15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
+    (timeline-print out-format (timeline num_workers feeds))))
