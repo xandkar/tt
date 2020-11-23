@@ -166,7 +166,7 @@
   (string-split str (regexp "[\r\n]+")))
 
 (module+ test
-  (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
+         (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
 
 (define (str->msgs nick uri str)
   (filter-map (λ (line) (str->msg nick uri line)) (str->lines str)))
