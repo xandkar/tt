@@ -2,13 +2,12 @@
 ; TODO write
 ; TODO caching (use cache by default, unless explicitly asked for update)
 ; - [x] value --> cache
-; - [ ] value <-- cache
+; - [x] value <-- cache
 ;   requires: commands
 ; TODO timeline limits
 ; TODO feed set operations (perhaps better done externally?)
 ; TODO timeline as a result of a query (feed set op + filter expressions)
 ; TODO named timelines
-; TODO CLI params
 ; TODO config files
 ; TODO parse "following" from feed
 ; - following = <nick> <uri>
@@ -178,33 +177,34 @@
   (close-input-port in)
   digest)
 
-(define (uri-fetch uri)
-  (log-info "GET ~a" uri)
-  (define resp (http-get uri))
-  (define status (http-response-code resp))
-  (define body (http-response-body resp))
-  (log-debug "finished GET ~a status:~a  body length:~a"
-             uri status (string-length body))
-  ; TODO Handle redirects
-  (if (= status 200)
-      (let*
-        ([url-digest
-           (hash-sha1 uri)]
-         [cache-file-path
-           (expand-user-path (string-append "~/.tt/cache/" url-digest))])
-        (display-to-file
-          body cache-file-path
-          #:exists 'replace)
-        body)
-      ; TODO A more-informative exception
-      (raise status)))
+(define (uri-fetch use-cache uri)
+  (define cache-file-path
+    (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 uri))))
+  (if (and use-cache (file-exists? cache-file-path))
+      (begin
+        (log-info "uri-fetch cached ~a" uri)
+        (file->string cache-file-path))
+      (begin
+        (log-info "uri-fetch new ~a" uri)
+        (let* ([resp   (http-get uri)]
+               [status (http-response-code resp)]
+               [body   (http-response-body resp)])
+              (log-debug "finished GET ~a status:~a  body length:~a"
+                         uri status (string-length body))
+              ; TODO Handle redirects
+              (if (= status 200)
+                  (begin
+                    (display-to-file body cache-file-path #:exists 'replace)
+                    body)
+                  ; TODO A more-informative exception
+                  (raise status))))))
 
 (define (timeline-print out-format timeline)
   (for ([msg timeline]
         [i   (in-naturals)])
        (msg-print out-format (odd? i) msg)))
 
-(define (feed->msgs feed)
+(define (feed->msgs use-cache feed)
   (log-info "downloading feed nick:~a uri:~a"
             (feed-nick feed)
             (feed-uri feed))
@@ -224,11 +224,11 @@
                      status)
           #f)])
     (define uri (feed-uri feed))
-    (str->msgs [feed-nick feed] uri [uri-fetch uri])))
+    (str->msgs [feed-nick feed] uri [uri-fetch use-cache uri])))
 
 ; TODO timeline contract : time-sorted list of messages
-(define (timeline num_workers feeds)
-  (sort (append* (concurrent-filter-map num_workers feed->msgs feeds))
+(define (timeline use-cache num_workers feeds)
+  (sort (append* (concurrent-filter-map num_workers (curry feed->msgs use-cache) feeds))
         (λ (a b) [< (msg-ts_epoch a) (msg-ts_epoch b)])))
 
 (define (str->feed str)
@@ -241,11 +241,6 @@
 
 (define (file->feeds filename)
   (str->feeds (file->string filename)))
-
-(define (we-are-twtxt)
-  (define uri
-    "https://raw.githubusercontent.com/mdom/we-are-twtxt/master/we-are-twtxt.txt")
-  (str->feeds (uri-fetch uri)))
 
 (define (user-agent prog-name prog-version)
   (let*
@@ -262,8 +257,9 @@
 (module+ main
          (require setup/getinfo)
 
-         (let* ([logger       (make-logger #f #f 'debug #f)]
-                [log-receiver (make-log-receiver logger 'debug)])
+         (let* ([level        'info]
+                [logger       (make-logger #f #f level #f)]
+                [log-receiver (make-log-receiver logger level)])
                (void (thread (λ ()
                                 [date-display-format 'iso-8601]
                                 [let loop ()
@@ -280,13 +276,25 @@
                 [user-agent   (user-agent prog-name prog-version)])
                (current-http-user-agent user-agent))
          (date-display-format 'rfc2822)
-         (let ([feeds
-                 (let ([args (current-command-line-arguments)])
-                      (if (= 0 (vector-length args))
-                          (we-are-twtxt)
-                          (file->feeds (vector-ref args 0))))]
-               [out-format
-                 'multi-line]
-               [num_workers
-                 15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
-              (timeline-print out-format (timeline num_workers feeds))))
+         (let* ([use-cache
+                  #f]
+                [out-format
+                  'multi-line]
+                [num_workers
+                  15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
+               (command-line
+                 #:once-any
+                 [("-c" "--cached")
+                  "Read cached data instead of downloading."
+                  (set! use-cache #t)]
+
+                 [("-j" "--jobs")
+                  njobs "Number of concurrent jobs."
+                  (set! num_workers (string->number njobs))]
+
+                 #:args (filename)
+
+                 (timeline-print out-format
+                                 (timeline use-cache
+                                           num_workers
+                                           (file->feeds filename))))))
