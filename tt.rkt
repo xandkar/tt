@@ -138,7 +138,7 @@
                 [text     "Lorem ipsum"]
                 [nick     "foo"]
                 [uri      "bar"]
-                [actual   (str->msg nick uri (string-join (list ts text) tab))]
+                [actual   (str->msg nick uri (string-append ts tab text))]
                 [expected (msg 1605756129 ts nick uri text)])
                ; FIXME re-enable after handling tz offset
                ;(check-equal?
