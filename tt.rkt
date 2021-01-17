@@ -283,7 +283,7 @@
                 [num_workers
                   15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
                (command-line
-                 #:once-any
+                 #:once-each
                  [("-c" "--cached")
                   "Read cached data instead of downloading."
                   (set! use-cache #t)]
