@@ -46,7 +46,7 @@
 (require rfc3339-old)
 
 (module+ test
-         (require rackunit))
+  (require rackunit))
 
 (struct msg  (ts_epoch ts_rfc3339 nick uri text))
 (struct feed (nick uri))
@@ -87,11 +87,11 @@
   results)
 
 (module+ test
-         (let* ([f        (λ (x) (if (even? x) x #f))]
-                [xs       (range 11)]
-                [actual   (sort (concurrent-filter-map 10 f xs) <)]
-                [expected (sort (           filter-map    f xs) <)])
-               (check-equal? actual expected "concurrent-filter-map")))
+  (let* ([f        (λ (x) (if (even? x) x #f))]
+         [xs       (range 11)]
+         [actual   (sort (concurrent-filter-map 10 f xs) <)]
+         [expected (sort (           filter-map    f xs) <)])
+        (check-equal? actual expected "concurrent-filter-map")))
 
 (define (msg-print out-format odd msg)
   (printf
@@ -133,40 +133,40 @@
                  (msg ts_epoch ts_rfc3339 nick uri text))))))
 
 (module+ test
-         (let* ([ts       "2020-11-18T22:22:09-0500"]
-                [tab      "	"]
-                [text     "Lorem ipsum"]
-                [nick     "foo"]
-                [uri      "bar"]
-                [actual   (str->msg nick uri (string-append ts tab text))]
-                [expected (msg 1605756129 ts nick uri text)])
-               ; FIXME re-enable after handling tz offset
-               ;(check-equal?
-               ;  (msg-ts_epoch actual)
-               ;  (msg-ts_epoch expected)
-               ;  "str->msg ts_epoch")
-               (check-equal?
-                 (msg-ts_rfc3339 actual)
-                 (msg-ts_rfc3339 expected)
-                 "str->msg ts_rfc3339")
-               (check-equal?
-                 (msg-nick actual)
-                 (msg-nick expected)
-                 "str->msg nick")
-               (check-equal?
-                 (msg-uri actual)
-                 (msg-uri expected)
-                 "str->msg uri")
-               (check-equal?
-                 (msg-text actual)
-                 (msg-text expected)
-                 "str->msg text")))
+  (let* ([ts       "2020-11-18T22:22:09-0500"]
+         [tab      "	"]
+         [text     "Lorem ipsum"]
+         [nick     "foo"]
+         [uri      "bar"]
+         [actual   (str->msg nick uri (string-append ts tab text))]
+         [expected (msg 1605756129 ts nick uri text)])
+        ; FIXME re-enable after handling tz offset
+        ;(check-equal?
+        ;  (msg-ts_epoch actual)
+        ;  (msg-ts_epoch expected)
+        ;  "str->msg ts_epoch")
+        (check-equal?
+          (msg-ts_rfc3339 actual)
+          (msg-ts_rfc3339 expected)
+          "str->msg ts_rfc3339")
+        (check-equal?
+          (msg-nick actual)
+          (msg-nick expected)
+          "str->msg nick")
+        (check-equal?
+          (msg-uri actual)
+          (msg-uri expected)
+          "str->msg uri")
+        (check-equal?
+          (msg-text actual)
+          (msg-text expected)
+          "str->msg text")))
 
 (define (str->lines str)
   (string-split str (regexp "[\r\n]+")))
 
 (module+ test
-         (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
+  (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
 
 (define (str->msgs nick uri str)
   (filter-map (λ (line) (str->msg nick uri line)) (str->lines str)))
@@ -255,46 +255,46 @@
     (format "~a/~a (~a)" prog-name prog-version user)))
 
 (module+ main
-         (require setup/getinfo)
+  (require setup/getinfo)
 
-         (let* ([level        'info]
-                [logger       (make-logger #f #f level #f)]
-                [log-receiver (make-log-receiver logger level)])
-               (void (thread (λ ()
-                                [date-display-format 'iso-8601]
-                                [let loop ()
-                                     (define data  (sync log-receiver))
-                                     (define level (vector-ref data 0))
-                                     (define msg   (vector-ref data 1))
-                                     (define ts    (date->string (current-date) #t))
-                                     (eprintf "~a [~a] ~a~n" ts level msg)
-                                     (loop)])))
-               (current-logger logger))
-         (current-http-response-auto #f)
-         (let* ([prog-name    "tt"]
-                [prog-version ((get-info (list prog-name)) 'version)]
-                [user-agent   (user-agent prog-name prog-version)])
-               (current-http-user-agent user-agent))
-         (date-display-format 'rfc2822)
-         (let* ([use-cache
-                  #f]
-                [out-format
-                  'multi-line]
-                [num_workers
-                  15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
-               (command-line
-                 #:once-each
-                 [("-c" "--cached")
-                  "Read cached data instead of downloading."
-                  (set! use-cache #t)]
+  (let* ([level        'info]
+         [logger       (make-logger #f #f level #f)]
+         [log-receiver (make-log-receiver logger level)])
+        (void (thread (λ ()
+                         [date-display-format 'iso-8601]
+                         [let loop ()
+                              (define data  (sync log-receiver))
+                              (define level (vector-ref data 0))
+                              (define msg   (vector-ref data 1))
+                              (define ts    (date->string (current-date) #t))
+                              (eprintf "~a [~a] ~a~n" ts level msg)
+                              (loop)])))
+        (current-logger logger))
+  (current-http-response-auto #f)
+  (let* ([prog-name    "tt"]
+         [prog-version ((get-info (list prog-name)) 'version)]
+         [user-agent   (user-agent prog-name prog-version)])
+        (current-http-user-agent user-agent))
+  (date-display-format 'rfc2822)
+  (let* ([use-cache
+           #f]
+         [out-format
+           'multi-line]
+         [num_workers
+           15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
+        (command-line
+          #:once-each
+          [("-c" "--cached")
+           "Read cached data instead of downloading."
+           (set! use-cache #t)]
 
-                 [("-j" "--jobs")
-                  njobs "Number of concurrent jobs."
-                  (set! num_workers (string->number njobs))]
+          [("-j" "--jobs")
+           njobs "Number of concurrent jobs."
+           (set! num_workers (string->number njobs))]
 
-                 #:args (filename)
+          #:args (filename)
 
-                 (timeline-print out-format
-                                 (timeline use-cache
-                                           num_workers
-                                           (file->feeds filename))))))
+          (timeline-print out-format
+                          (timeline use-cache
+                                    num_workers
+                                    (file->feeds filename))))))
