@@ -1,0 +1,37 @@
+- [ ] optional text wrap
+- [ ] write
+- [ ] caching (use cache by default, unless explicitly asked for update)
+  - [x] value --> cache
+  - [x] value <-- cache
+    requires: commands
+- [ ] timeline limits
+- [ ] feed set operations (perhaps better done externally?)
+- [ ] timeline as a result of a query (feed set op + filter expressions)
+- [ ] named timelines
+- [ ] config files
+- [ ] parse "following" from feed
+  - following = <nick> <uri>
+- [ ] parse mentions:
+  - @<source.nick source.url> | @<source.url>
+- [ ] highlight mentions
+- [ ] filter on mentions
+- [ ] highlight hashtags
+- [ ] filter on hashtags
+- [ ] hashtags as channels? initial hashtag special?
+- [ ] query language
+- [ ] console logger colors by level ('error)
+- [ ] file logger ('debug)
+- [ ] commands:
+  - r | read
+    - see timeline ops above
+  - w | write
+    - arg or stdin
+    - nick expand to URI
+  - q | query
+    - see timeline ops above
+    - see hashtag and channels above
+  - d | download
+  - u | upload
+    - calls user-configured command to upload user's own feed file to their server
+  Looks like a better CLI parser than "racket/cmdline":
+  https://docs.racket-lang.org/natural-cli/
