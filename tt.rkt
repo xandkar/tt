@@ -93,17 +93,20 @@
          [expected (sort (           filter-map    f xs) <)])
     (check-equal? actual expected "concurrent-filter-map")))
 
-(define (msg-print out-format odd msg)
-  (printf
-    (match out-format
-      ['single-line "~a  \033[1;37m<~a ~a>\033[0m  \033[0;~am~a\033[0m~n"]
-      ['multi-line  "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"]
-      [_           (raise (format "Invalid output format: ~a" out-format))])
-    (date->string (seconds->date [msg-ts_epoch msg]) #t)
-    (msg-nick msg)
-    (msg-uri  msg)
-    (if odd 36 33)
-    (msg-text msg)))
+(define msg-print
+  (let* ([colors (vector 36 33)]
+         [n      (vector-length colors)])
+    (λ (out-format color-i msg)
+       (printf
+         (match out-format
+           ['single-line "~a  \033[1;37m<~a ~a>\033[0m  \033[0;~am~a\033[0m~n"]
+           ['multi-line  "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"]
+           [_           (raise (format "Invalid output format: ~a" out-format))])
+         (date->string (seconds->date [msg-ts_epoch msg]) #t)
+         (msg-nick msg)
+         (msg-uri  msg)
+         (vector-ref colors (modulo color-i n))
+         (msg-text msg)))))
 
 (define re-msg-begin
   ; TODO Zulu offset. Maybe in several formats. Which ones?
@@ -200,9 +203,13 @@
               (raise status))))))
 
 (define (timeline-print out-format timeline)
-  (for ([msg timeline]
-        [i   (in-naturals)])
-       (msg-print out-format (odd? i) msg)))
+  (void (foldl (match-lambda**
+                 [((and m (msg _ _ nick _ _)) (cons prev-nick i))
+                  (let ([i (if (string=? prev-nick nick) i (+ 1 i))])
+                    (msg-print out-format i m)
+                    (cons nick i))])
+               (cons "" 0)
+               timeline)))
 
 (define (feed->msgs use-cache feed)
   (log-info "downloading feed nick:~a uri:~a"
