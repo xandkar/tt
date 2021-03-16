@@ -41,9 +41,9 @@
 
 (require openssl/sha1)
 (require racket/date)
+(require (prefix-in srfi/19: srfi/19))
 
 (require http-client)
-(require rfc3339-old)
 
 (module+ test
   (require rackunit))
@@ -109,6 +109,15 @@
   ; TODO Zulu offset. Maybe in several formats. Which ones?
   (pregexp "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"))
 
+(define (rfc3339->epoch str)
+  (with-handlers
+    ([exn? (λ (e) (log-error "Timestamp parse failure of ~v with ~v" str e))])
+    ((srfi/19:time-second
+    (srfi/19:date->time-utc
+      (srfi/19:string->date
+        str
+        "~Y-~m-~dT~2"))))))
+
 (define (str->msg nick uri str)
   (if (not (regexp-match? re-msg-begin str))
       (begin
@@ -122,14 +131,7 @@
             (let*
               ([ts_rfc3339 (first  toks)]
                [text       (second toks)]
-               [t          (string->rfc3339-record ts_rfc3339)]
-               ; TODO handle tz offset
-               [ts_epoch (find-seconds [rfc3339-record:second t]
-                                       [rfc3339-record:minute t]
-                                       [rfc3339-record:hour   t]
-                                       [rfc3339-record:mday   t]
-                                       [rfc3339-record:month  t]
-                                       [rfc3339-record:year   t])])
+               [ts_epoch   (rfc3339->epoch ts_rfc3339)])
               (msg ts_epoch ts_rfc3339 nick uri text))))))
 
 (module+ test
@@ -140,11 +142,10 @@
          [uri      "bar"]
          [actual   (str->msg nick uri (string-append ts tab text))]
          [expected (msg 1605756129 ts nick uri text)])
-    ; FIXME re-enable after handling tz offset
-    ;(check-equal?
-    ;  (msg-ts_epoch actual)
-    ;  (msg-ts_epoch expected)
-    ;  "str->msg ts_epoch")
+    (check-equal?
+      (msg-ts_epoch actual)
+      (msg-ts_epoch expected)
+      "str->msg ts_epoch")
     (check-equal?
       (msg-ts_rfc3339 actual)
       (msg-ts_rfc3339 expected)

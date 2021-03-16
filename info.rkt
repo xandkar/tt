@@ -10,7 +10,7 @@
 (define pkg-authors
   '("Siraaj Khandkar <siraaj@khandkar.net>"))
 (define deps
-  '("base" "http-client" "rfc3339-old"))
+  '("base" "http-client"))
 (define racket-launcher-names
   '("tt"))
 (define racket-launcher-libraries
