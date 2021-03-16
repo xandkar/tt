@@ -1,3 +1,4 @@
+- [ ] remove dependency on http-client
 - [ ] optional text wrap
 - [ ] write
 - [ ] caching (use cache by default, unless explicitly asked for update)

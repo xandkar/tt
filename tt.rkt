@@ -246,11 +246,11 @@
 (module+ main
   (require setup/getinfo)
 
-  (current-http-response-auto #f)
+  (current-http-client/response-auto #f)
   (let* ([prog-name    "tt"]
          [prog-version ((get-info (list prog-name)) 'version)]
          [user-agent   (user-agent prog-name prog-version)])
-    (current-http-user-agent user-agent))
+    (current-http-client/user-agent user-agent))
   (let* ([use-cache
            #f]
          [log-level
