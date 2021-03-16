@@ -11,7 +11,11 @@ This means unlimited possibilities for ad-hoc, interesting filtering
 combinations. Especially when paired with
 [process substitution](https://en.wikipedia.org/wiki/Process_substitution).
 
-![Screenshot](screenshot-multi.jpg)
+### long format (default)
+![Screenshot](screenshot-long.jpg)
+
+### short format (CLI option: -s)
+![Screenshot](screenshot-short.jpg)
 
 
 instructions

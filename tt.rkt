@@ -97,16 +97,21 @@
   (let* ([colors (vector 36 33)]
          [n      (vector-length colors)])
     (λ (out-format color-i msg)
-       (printf
+       (let ([color (vector-ref colors (modulo color-i n))]
+             [nick  (msg-nick msg)]
+             [uri   (msg-uri  msg)]
+             [text  (msg-text msg)])
          (match out-format
-           ['single-line "~a  \033[1;37m<~a ~a>\033[0m  \033[0;~am~a\033[0m~n"]
-           ['multi-line  "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"]
-           [_           (raise (format "Invalid output format: ~a" out-format))])
-         (date->string (seconds->date [msg-ts_epoch msg]) #t)
-         (msg-nick msg)
-         (msg-uri  msg)
-         (vector-ref colors (modulo color-i n))
-         (msg-text msg)))))
+           ['single-line
+            (printf "~a  \033[1;37m<~a>\033[0m  \033[0;~am~a\033[0m~n"
+                    (parameterize ([date-display-format 'iso-8601])
+                      (date->string (seconds->date [msg-ts_epoch msg]) #t))
+                    nick color text)]
+           ['multi-line
+            (printf "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
+                    (parameterize ([date-display-format 'rfc2822])
+                      (date->string (seconds->date [msg-ts_epoch msg]) #t))
+                    nick uri color text)])))))
 
 (define re-msg-begin
   ; TODO Zulu offset. Maybe in several formats. Which ones?
@@ -189,6 +194,7 @@
         (file->string cache-file-path))
       (begin
         (log-info "uri-fetch new ~a" uri)
+        ; TODO Timeout. Currently hangs on slow connections.
         (let* ([resp   (http-get uri)]
                [status (http-response-code resp)]
                [body   (http-response-body resp)])
@@ -261,30 +267,33 @@
      )
     (format "~a/~a (~a)" prog-name prog-version user)))
 
+(define (start-logger level)
+  (let* ([logger       (make-logger #f #f level #f)]
+         [log-receiver (make-log-receiver logger level)])
+    (void (thread (λ ()
+                     (parameterize
+                       ([date-display-format 'iso-8601])
+                       (let loop ()
+                         (define data  (sync log-receiver))
+                         (define level (vector-ref data 0))
+                         (define msg   (vector-ref data 1))
+                         (define ts    (date->string (current-date) #t))
+                         (eprintf "~a [~a] ~a~n" ts level msg)
+                         (loop))))))
+    (current-logger logger)))
+
 (module+ main
   (require setup/getinfo)
 
-  (let* ([level        'info]
-         [logger       (make-logger #f #f level #f)]
-         [log-receiver (make-log-receiver logger level)])
-    (void (thread (λ ()
-                     [date-display-format 'iso-8601]
-                     [let loop ()
-                       (define data  (sync log-receiver))
-                       (define level (vector-ref data 0))
-                       (define msg   (vector-ref data 1))
-                       (define ts    (date->string (current-date) #t))
-                       (eprintf "~a [~a] ~a~n" ts level msg)
-                       (loop)])))
-    (current-logger logger))
   (current-http-response-auto #f)
   (let* ([prog-name    "tt"]
          [prog-version ((get-info (list prog-name)) 'version)]
          [user-agent   (user-agent prog-name prog-version)])
     (current-http-user-agent user-agent))
-  (date-display-format 'rfc2822)
   (let* ([use-cache
            #f]
+         [log-level
+           'info]
          [out-format
            'multi-line]
          [num_workers
@@ -295,12 +304,25 @@
        "Read cached data instead of downloading."
        (set! use-cache #t)]
 
+      [("-d" "--debug")
+       "Enable debug log level."
+       (set! log-level 'debug)]
+
       [("-j" "--jobs")
        njobs "Number of concurrent jobs."
        (set! num_workers (string->number njobs))]
 
-      #:args (filename)
+      #:once-any
+      [("-s" "--short")
+       "Short output format"
+       (set! out-format 'single-line)]
 
+      [("-l" "--long")
+       "Long output format"
+       (set! out-format 'multi-line)]
+
+      #:args (filename)
+      (start-logger log-level)
       (timeline-print out-format
                       (timeline use-cache
                                 num_workers
