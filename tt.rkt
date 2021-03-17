@@ -210,8 +210,11 @@
   (define toks (string-split str))
   (apply feed toks))
 
+(define (filter-comments lines)
+  (filter-not (λ (line) (string-prefix? line "#")) lines))
+
 (define (str->feeds str)
-  (map str->feed (str->lines str)))
+  (map str->feed (filter-comments (str->lines str))))
 
 (define (file->feeds filename)
   (str->feeds (file->string filename)))
