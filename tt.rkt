@@ -74,34 +74,56 @@
                       (date->string (seconds->date [msg-ts_epoch msg]) #t))
                     nick uri color text)])))))
 
-(define re-msg-begin
-  ; TODO Zulu offset. Maybe in several formats. Which ones?
-  (pregexp "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"))
-
-(define (str->msg nick uri str)
-  (if (not (regexp-match? re-msg-begin str))
-      (begin
-        (log-debug "Non-msg line from nick:~a, line:~a" nick str)
-        #f)
-      (let ([toks (string-split str (regexp "\t+"))])
-        (if (not (= 2 (length toks)))
-            (begin
-              (log-warning "Invalid msg line from nick:~a, msg:~a" nick str)
-              #f)
+(define str->msg
+  (let ([re (pregexp "^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?)(\\.[0-9]+)?([^\\s\t]*)[\\s\t]+(.*)$")])
+    (λ (nick uri str)
+       (with-handlers*
+         ([exn:fail?
+            (λ (e)
+               (log-error "Failed to parse msg: ~v, from: ~v, at: ~v, because: ~v" str nick uri e)
+               #f)])
+         (match (regexp-match re str)
+           [(list _wholething ts s _fractional tz text)
             (let*
-              ([ts_rfc3339 (first  toks)]
-               [text       (second toks)]
+              ([ts_rfc3339 (string-append ts (if s "" ":00") (if tz tz ""))]
                [t          (string->rfc3339-record ts_rfc3339)]
+               [s          (rfc3339-record:second t)]
                ; TODO handle tz offset
-               [ts_epoch (find-seconds [rfc3339-record:second t]
+               [ts_epoch (find-seconds [if s s 0]
                                        [rfc3339-record:minute t]
                                        [rfc3339-record:hour   t]
                                        [rfc3339-record:mday   t]
                                        [rfc3339-record:month  t]
                                        [rfc3339-record:year   t])])
-              (msg ts_epoch ts_rfc3339 nick uri text))))))
+              (msg ts_epoch ts_rfc3339 nick uri text))]
+           [_
+             (log-debug "Non-msg line from nick:~a, line:~a" nick str)
+             #f])))))
 
 (module+ test
+  (let* ([tzs (for*/list ([d '("-" "+")]
+                          [h '("5" "05")]
+                          [m '("00" ":00" "57" ":57")])
+                         (string-append d h m))]
+         [tzs (list* "" "Z" tzs)])
+    (for* ([n   '("fake-nick")]
+           [u   '("fake-uri")]
+           [s   '("" ":10")]
+           [f   '("" ".1337")]
+           [z   tzs]
+           [sep (list "\t" " ")]
+           [txt '("foo bar baz" "'jaz poop bear giraffe / tea" "@*\"``")])
+          (let* ([ts (string-append "2020-11-18T22:22"
+                                    (if (non-empty-string? s) s ":00")
+                                    z)]
+                 [m  (str->msg n u (string-append ts sep txt))])
+            (check-not-false m)
+            (check-equal? (msg-nick m) n)
+            (check-equal? (msg-uri m) u)
+            (check-equal? (msg-text m) txt)
+            (check-equal? (msg-ts_rfc3339 m) ts (format "Given: ~v" ts))
+            )))
+
   (let* ([ts       "2020-11-18T22:22:09-0500"]
          [tab      "	"]
          [text     "Lorem ipsum"]
