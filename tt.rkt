@@ -74,6 +74,8 @@
                       (date->string (seconds->date [msg-ts_epoch msg]) #t))
                     nick uri color text)])))))
 
+; TODO Implement rfc3339->epoch and remove dependency on rfc3339-old
+
 (define str->msg
   (let ([re (pregexp "^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?)(\\.[0-9]+)?([^\\s\t]*)[\\s\t]+(.*)$")])
     (λ (nick uri str)

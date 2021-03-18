@@ -1,3 +1,4 @@
+- [ ] Implement rfc3339->epoch and remove dependency on rfc3339-old
 - [ ] remove dependency on http-client
 - [ ] optional text wrap
 - [ ] write
