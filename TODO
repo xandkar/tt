@@ -2,7 +2,7 @@
 - [ ] remove dependency on http-client
 - [ ] optional text wrap
 - [ ] write
-- [-] caching (use cache by default, unless explicitly asked for update)
+- [x] caching (use cache by default, unless explicitly asked for update)
   - [x] value --> cache
   - [x] value <-- cache
     requires: d command
@@ -32,7 +32,7 @@
   - [ ] q | query
     - see timeline ops above
     - see hashtag and channels above
-  - [ ] d | download
+  - [x] d | download
   - [ ] u | upload
     - calls user-configured command to upload user's own feed file to their server
   Looks like a better CLI parser than "racket/cmdline": https://docs.racket-lang.org/natural-cli/

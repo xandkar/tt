@@ -170,28 +170,31 @@
   (close-input-port in)
   digest)
 
-(define (uri-fetch use-cache uri)
+(define (uri-read-cached uri)
   (define cache-file-path
     (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 uri))))
-  (if (and use-cache (file-exists? cache-file-path))
+  (if (file-exists? cache-file-path)
+      (file->string cache-file-path)
       (begin
-        (log-info "uri-fetch cached ~a" uri)
-        (file->string cache-file-path))
-      (begin
-        (log-info "uri-fetch new ~a" uri)
-        ; TODO Timeout. Currently hangs on slow connections.
-        (let* ([resp   (http-get uri)]
-               [status (http-response-code resp)]
-               [body   (http-response-body resp)])
-          (log-debug "finished GET ~a status:~a  body length:~a"
-                     uri status (string-length body))
-          ; TODO Handle redirects
-          (if (= status 200)
-              (begin
-                (display-to-file body cache-file-path #:exists 'replace)
-                body)
-              ; TODO A more-informative exception
-              (raise status))))))
+        (log-warning "Cache file not found for URI: ~a" uri)
+        "")))
+
+; uri-download : String -> Void
+(define (uri-download uri)
+  (define cache-file-path
+    (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 uri))))
+  (log-info "uri-download ~a" uri)
+  ; TODO Timeout. Currently hangs on slow connections.
+  (let* ([resp   (http-get uri)]
+         [status (http-response-code resp)]
+         [body   (http-response-body resp)])
+    (log-debug "finished GET ~a status:~a  body length:~a"
+               uri status (string-length body))
+    ; TODO Handle redirects
+    (if (= status 200)
+        (display-to-file body cache-file-path #:exists 'replace)
+        ; TODO A more-informative exception
+        (raise status))))
 
 (define (timeline-print out-format timeline)
   (void (foldl (match-lambda**
@@ -202,31 +205,44 @@
                (cons "" 0)
                timeline)))
 
-(define (feed->msgs use-cache feed)
-  (log-info "downloading feed nick:~a uri:~a"
+; feed->msgs : Feed -> (Listof Msg)
+(define (feed->msgs feed)
+  (log-info "Reading feed nick:~a uri:~a"
+            (feed-nick feed)
+            (feed-uri feed))
+  (define uri (feed-uri feed))
+  (str->msgs (feed-nick feed) uri (uri-read-cached uri)))
+
+; feed-download : Feed -> Void
+(define (feed-download feed)
+  (log-info "Downloading feed nick:~a uri:~a"
             (feed-nick feed)
             (feed-uri feed))
   (with-handlers
     ([exn:fail:network?
        (λ (e)
-          (log-error "network error nick:~a uri:~a  exn:~a"
+          (log-error "Network error nick:~a uri:~a  exn:~a"
                      (feed-nick feed)
                      (feed-uri feed)
                      e)
           #f)]
      [integer?
        (λ (status)
-          (log-error "http error nick:~a uri:~a  status:~a"
+          (log-error "HTTP error nick:~a uri:~a  status:~a"
                      (feed-nick feed)
                      (feed-uri feed)
                      status)
           #f)])
-    (define uri (feed-uri feed))
-    (str->msgs [feed-nick feed] uri [uri-fetch use-cache uri])))
+    (uri-download (feed-uri feed))))
+
+; timeline-download : Integer -> (Listof Feed) -> Void
+(define (timeline-download num_workers feeds)
+  ; TODO No need for map - can just iter
+  (void (concurrent-filter-map num_workers feed-download feeds)))
 
 ; TODO timeline contract : time-sorted list of messages
-(define (timeline use-cache num_workers feeds)
-  (sort (append* (concurrent-filter-map num_workers (curry feed->msgs use-cache) feeds))
+(define (timeline-read feeds)
+  (sort (append* (filter-map feed->msgs feeds))
         (λ (a b) [< (msg-ts_epoch a) (msg-ts_epoch b)])))
 
 (define (str->feed str)
@@ -251,8 +267,7 @@
        (if (file-exists? user-feed-file)
            (let ([user (first (file->feeds user-feed-file))])
              (format "+~a; @~a" (feed-uri user) (feed-nick user)))
-           (format "+~a" prog-uri))]
-     )
+           (format "+~a" prog-uri))])
     (format "~a/~a (~a)" prog-name prog-version user)))
 
 (define (start-logger level)
@@ -284,29 +299,37 @@
       #:help-labels
       ""
       "and <command> is one of"
-      "r, read : Read the timeline."
+      "r, read i   : Read the timeline."
+      "d, download : Download the timeline."
       ""
       #:args (command . args)
+      (start-logger log-level)
+      (current-command-line-arguments (list->vector args))
       (match command
-        [(or "r" "read")
-         (current-command-line-arguments (list->vector args))
-         (let ([use-cache
-                 #f]
-               [out-format
-                 'multi-line]
-               [num_workers
-                 ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
-                 15])
+        [(or "d" "download")
+         (let ([num_workers 15]) ; 15 was fastest out of the tried: 1, 5, 10, 20.
            (command-line
              #:program
-             "tt read"
+             "tt download"
              #:once-each
              [("-j" "--jobs")
               njobs "Number of concurrent jobs."
               (set! num_workers (string->number njobs))]
-             [("-c" "--cached")
-              "Read cached data instead of downloading."
-              (set! use-cache #t)]
+
+             #:args (filename)
+
+             (current-http-client/response-auto #f)
+             (let* ([prog-name    "tt"]
+                    [prog-version ((info:get-info (list prog-name)) 'version)]
+                    [user-agent   (user-agent prog-name prog-version)])
+               (current-http-client/user-agent user-agent))
+             (timeline-download num_workers (file->feeds filename))
+             ))]
+        [(or "r" "read")
+         (let ([out-format 'multi-line])
+           (command-line
+             #:program
+             "tt read"
              #:once-any
              [("-s" "--short")
               "Short output format"
@@ -315,14 +338,5 @@
               "Long output format"
               (set! out-format 'multi-line)]
              #:args (filename)
-             (start-logger log-level)
-             (current-http-client/response-auto #f)
-             (let* ([prog-name    "tt"]
-                    [prog-version ((info:get-info (list prog-name)) 'version)]
-                    [user-agent   (user-agent prog-name prog-version)])
-               (current-http-client/user-agent user-agent))
-             (timeline-print out-format
-                             (timeline use-cache
-                                       num_workers
-                                       (file->feeds filename)))))]
+             (timeline-print out-format (timeline-read (file->feeds filename)))))]
         ))))
