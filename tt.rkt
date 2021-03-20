@@ -241,9 +241,13 @@
   (void (concurrent-filter-map num_workers feed-download feeds)))
 
 ; TODO timeline contract : time-sorted list of messages
-(define (timeline-read feeds)
+; timeline-read : (U 'old->new 'new->old) -> (Listof Feeds) -> (Listof Msg)
+(define (timeline-read order feeds)
+  (define cmp (match order
+                ['old->new <]
+                ['new->old >]))
   (sort (append* (filter-map feed->msgs feeds))
-        (λ (a b) [< (msg-ts_epoch a) (msg-ts_epoch b)])))
+        (λ (a b) (cmp (msg-ts_epoch a) (msg-ts_epoch b)))))
 
 (define (str->feed str)
   ; TODO validation
@@ -326,10 +330,15 @@
              (timeline-download num_workers (file->feeds filename))
              ))]
         [(or "r" "read")
-         (let ([out-format 'multi-line])
+         (let ([out-format 'multi-line]
+               [order      'old->new])
            (command-line
              #:program
              "tt read"
+             #:once-each
+             [("-r" "--rev")
+              "Reverse displayed timeline order."
+              (set! order 'new->old)]
              #:once-any
              [("-s" "--short")
               "Short output format"
@@ -338,5 +347,5 @@
               "Long output format"
               (set! out-format 'multi-line)]
              #:args (filename)
-             (timeline-print out-format (timeline-read (file->feeds filename)))))]
+             (timeline-print out-format (timeline-read order (file->feeds filename)))))]
         ))))
