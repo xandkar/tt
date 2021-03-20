@@ -1,3 +1,4 @@
+- [ ] Support time ranges (i.e. reading the timeline between given time points)
 - [ ] Implement rfc3339->epoch and remove dependency on rfc3339-old
 - [ ] remove dependency on http-client
 - [ ] optional text wrap
