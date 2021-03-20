@@ -66,12 +66,12 @@
            ['single-line
             (printf "~a  \033[1;37m<~a>\033[0m  \033[0;~am~a\033[0m~n"
                     (parameterize ([date-display-format 'iso-8601])
-                      (date->string (seconds->date [msg-ts_epoch msg]) #t))
+                                  (date->string (seconds->date [msg-ts_epoch msg]) #t))
                     nick color text)]
            ['multi-line
             (printf "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
                     (parameterize ([date-display-format 'rfc2822])
-                      (date->string (seconds->date [msg-ts_epoch msg]) #t))
+                                  (date->string (seconds->date [msg-ts_epoch msg]) #t))
                     nick uri color text)])))))
 
 ; TODO Implement rfc3339->epoch and remove dependency on rfc3339-old
