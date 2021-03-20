@@ -30,12 +30,16 @@ instructions
    (replacing `7.9` with whatever version you have installed)
 
 ### usage
+Download feeds from the Internet:
+`tt d (FOLLOW-FILE)`
+
 Read your timeline:
 `tt r (FOLLOW-FILE)`
 
 See the rest of the usage options:
 `tt -h`
-`tt r -h`
+
+`tt <command> -h`
 
 
 notes
