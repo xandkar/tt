@@ -271,47 +271,58 @@
     (current-logger logger)))
 
 (module+ main
-  (require setup/getinfo)
+  (require (prefix-in info: setup/getinfo))
 
-  (current-http-client/response-auto #f)
-  (let* ([prog-name    "tt"]
-         [prog-version ((get-info (list prog-name)) 'version)]
-         [user-agent   (user-agent prog-name prog-version)])
-    (current-http-client/user-agent user-agent))
-  (let* ([use-cache
-           #f]
-         [log-level
-           'info]
-         [out-format
-           'multi-line]
-         [num_workers
-           15]) ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
+  (let ([log-level 'info])
     (command-line
+      #:program
+      "tt"
       #:once-each
-      [("-c" "--cached")
-       "Read cached data instead of downloading."
-       (set! use-cache #t)]
-
       [("-d" "--debug")
        "Enable debug log level."
        (set! log-level 'debug)]
-
-      [("-j" "--jobs")
-       njobs "Number of concurrent jobs."
-       (set! num_workers (string->number njobs))]
-
-      #:once-any
-      [("-s" "--short")
-       "Short output format"
-       (set! out-format 'single-line)]
-
-      [("-l" "--long")
-       "Long output format"
-       (set! out-format 'multi-line)]
-
-      #:args (filename)
-      (start-logger log-level)
-      (timeline-print out-format
-                      (timeline use-cache
-                                num_workers
-                                (file->feeds filename))))))
+      #:help-labels
+      ""
+      "and <command> is one of"
+      "r, read : Read the timeline."
+      ""
+      #:args (command . args)
+      (match command
+        [(or "r" "read")
+         (current-command-line-arguments (list->vector args))
+         (let ([use-cache
+                 #f]
+               [out-format
+                 'multi-line]
+               [num_workers
+                 ; 15 was fastest out of the tried 1, 5, 10, 15 and 20.
+                 15])
+           (command-line
+             #:program
+             "tt read"
+             #:once-each
+             [("-j" "--jobs")
+              njobs "Number of concurrent jobs."
+              (set! num_workers (string->number njobs))]
+             [("-c" "--cached")
+              "Read cached data instead of downloading."
+              (set! use-cache #t)]
+             #:once-any
+             [("-s" "--short")
+              "Short output format"
+              (set! out-format 'single-line)]
+             [("-l" "--long")
+              "Long output format"
+              (set! out-format 'multi-line)]
+             #:args (filename)
+             (start-logger log-level)
+             (current-http-client/response-auto #f)
+             (let* ([prog-name    "tt"]
+                    [prog-version ((info:get-info (list prog-name)) 'version)]
+                    [user-agent   (user-agent prog-name prog-version)])
+               (current-http-client/user-agent user-agent))
+             (timeline-print out-format
+                             (timeline use-cache
+                                       num_workers
+                                       (file->feeds filename)))))]
+        ))))

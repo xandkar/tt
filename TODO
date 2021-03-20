@@ -2,10 +2,10 @@
 - [ ] remove dependency on http-client
 - [ ] optional text wrap
 - [ ] write
-- [ ] caching (use cache by default, unless explicitly asked for update)
+- [-] caching (use cache by default, unless explicitly asked for update)
   - [x] value --> cache
   - [x] value <-- cache
-    requires: commands
+    requires: d command
 - [ ] timeline limits
 - [ ] feed set operations (perhaps better done externally?)
 - [ ] timeline as a result of a query (feed set op + filter expressions)
@@ -23,17 +23,17 @@
 - [ ] query language
 - [ ] console logger colors by level ('error)
 - [ ] file logger ('debug)
-- [ ] commands:
-  - r | read
+- [-] commands:
+  - [x] r | read
     - see timeline ops above
-  - w | write
+  - [ ] w | write
     - arg or stdin
     - nick expand to URI
-  - q | query
+  - [ ] q | query
     - see timeline ops above
     - see hashtag and channels above
-  - d | download
-  - u | upload
+  - [ ] d | download
+  - [ ] u | upload
     - calls user-configured command to upload user's own feed file to their server
-  Looks like a better CLI parser than "racket/cmdline":
-  https://docs.racket-lang.org/natural-cli/
+  Looks like a better CLI parser than "racket/cmdline": https://docs.racket-lang.org/natural-cli/
+  But it is no longer necessary now that I've figured out how to chain (command-line ..) calls.
