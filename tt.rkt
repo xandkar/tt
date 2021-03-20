@@ -305,6 +305,7 @@
       "and <command> is one of"
       "r, read i   : Read the timeline."
       "d, download : Download the timeline."
+      "u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload)."
       ""
       #:args (command . args)
       (start-logger log-level)
@@ -329,6 +330,14 @@
                (current-http-client/user-agent user-agent))
              (timeline-download num_workers (file->feeds filename))
              ))]
+        [(or "u" "upload")
+         (command-line
+             #:program
+             "tt upload"
+             #:args ()
+             (if (system (path->string (expand-user-path "~/.tt/upload")))
+               (exit 0)
+               (exit 1)))]
         [(or "r" "read")
          (let ([out-format 'multi-line]
                [order      'old->new])
