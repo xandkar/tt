@@ -1,3 +1,19 @@
+- [ ] Convert to Typed Racket
+  - requires: build executable (otherwise too slow)
+- [ ] Build executable
+  - requires: fix of "collection not found" when executing the built executable
+    outside the source directory:
+
+    collection-path: collection not found
+      collection: "tt"
+      in collection directories:
+      context...:
+       /usr/share/racket/collects/racket/private/collect.rkt:11:53: fail
+       /usr/share/racket/collects/setup/getinfo.rkt:17:0: get-info
+       /usr/share/racket/collects/racket/contract/private/arrow-val-first.rkt:555:3
+       /usr/share/racket/collects/racket/cmdline.rkt:191:51
+       '|#%mzc:p
+
 - [ ] Support redirects
   - should permanent redirects update the feed somehow?
 - [ ] Support time ranges (i.e. reading the timeline between given time points)
