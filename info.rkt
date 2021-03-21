@@ -6,11 +6,11 @@
 (define pkg-desc
   "twtxt client")
 (define version
-  "0.9.0")
+  "0.10.0")
 (define pkg-authors
   '("Siraaj Khandkar <siraaj@khandkar.net>"))
 (define deps
-  '("base" "http-client" "rfc3339-old"))
+  '("base" "rfc3339-old"))
 (define racket-launcher-names
   '("tt"))
 (define racket-launcher-libraries

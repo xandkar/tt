@@ -2,15 +2,31 @@
 
 (require openssl/sha1)
 (require racket/date)
+(require (prefix-in info: setup/getinfo))
+(require
+  net/http-client
+  net/url-string
+  net/url-structs)
 
-(require http-client)
 (require rfc3339-old)
 
 (module+ test
   (require rackunit))
 
-(struct msg  (ts_epoch ts_rfc3339 nick uri text))
-(struct feed (nick uri))
+(struct msg
+        (
+         ts_epoch   ; Integer
+         ts_rfc3339 ; String
+         nick       ; String
+         uri        ; net/url-structs:url
+         text       ; String
+         ))
+
+(struct feed
+        (
+         nick ; String
+         uri  ; net/url-structs:url
+         ))
 
 (define (concurrent-filter-map num_workers f xs)
   ; TODO preserve order of elements OR communicate that reorder is expected
@@ -60,7 +76,7 @@
     (λ (out-format color-i msg)
        (let ([color (vector-ref colors (modulo color-i n))]
              [nick  (msg-nick msg)]
-             [uri   (msg-uri  msg)]
+             [uri   (url->string (msg-uri msg))]
              [text  (msg-text msg)])
          (match out-format
            ['single-line
@@ -82,7 +98,9 @@
        (with-handlers*
          ([exn:fail?
             (λ (e)
-               (log-error "Failed to parse msg: ~v, from: ~v, at: ~v, because: ~v" str nick uri e)
+               (log-error
+                 "Failed to parse msg: ~v, from: ~v, at: ~v, because: ~v"
+                 str nick (url->string uri) e)
                #f)])
          (match (regexp-match re str)
            [(list _wholething ts s _fractional tz text)
@@ -170,31 +188,85 @@
   (close-input-port in)
   digest)
 
+(define (url->cache-file-path uri)
+  ; TODO Replace hashing with encoding
+  (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 (url->string uri)))))
+
 (define (uri-read-cached uri)
-  (define cache-file-path
-    (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 uri))))
-  (if (file-exists? cache-file-path)
-      (file->string cache-file-path)
+  (define path (url->cache-file-path uri))
+  (if (file-exists? path)
+      (file->string path)
       (begin
-        (log-warning "Cache file not found for URI: ~a" uri)
+        (log-warning "Cache file not found for URI: ~a" (url->string uri))
         "")))
 
-; uri-download : String -> Void
-(define (uri-download uri)
-  (define cache-file-path
-    (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 uri))))
-  (log-info "uri-download ~a" uri)
-  ; TODO Timeout. Currently hangs on slow connections.
-  (let* ([resp   (http-get uri)]
-         [status (http-response-code resp)]
-         [body   (http-response-body resp)])
-    (log-debug "finished GET ~a status:~a  body length:~a"
-               uri status (string-length body))
-    ; TODO Handle redirects
-    (if (= status 200)
-        (display-to-file body cache-file-path #:exists 'replace)
-        ; TODO A more-informative exception
-        (raise status))))
+(define (str->feed str)
+  (log-debug "Parsing feed string: ~v" str)
+  (match (string-split str)
+    [(list nick u)
+     (with-handlers*
+       ([exn:fail?
+          (λ (e)
+             (log-error "Invalid URI: ~v, exn: ~v" u e)
+             #f)])
+       (feed nick (string->url u)))]
+    [_
+      (log-error "Invalid feed string: ~v" str)
+      #f]))
+
+(define (filter-comments lines)
+  (filter-not (λ (line) (string-prefix? line "#")) lines))
+
+(define (str->feeds str)
+  (filter-map str->feed (filter-comments (str->lines str))))
+
+(define (file->feeds filename)
+  (str->feeds (file->string filename)))
+
+(define user-agent
+  (let*
+    ([prog-name      "tt"]
+     [prog-version   ((info:get-info (list prog-name)) 'version)]
+     [prog-uri       "https://github.com/xandkar/tt"]
+     [user-feed-file (expand-user-path "~/twtxt-me.txt")]
+     [user
+       (if (file-exists? user-feed-file)
+           (let ([user (first (file->feeds user-feed-file))])
+             (format "+~a; @~a" (url->string (feed-uri user)) (feed-nick user)))
+           (format "+~a" prog-uri))])
+    (format "~a/~a (~a)" prog-name prog-version user)))
+
+; uri-download : net/url-structs:url -> Void
+(define (uri-download u)
+  (define cache-file-path (url->cache-file-path u))
+  (log-debug "uri-download ~v into ~v" u cache-file-path)
+  (match* ((url-scheme u) (url-host u) (url-port u))
+    [(s h p)
+     #:when (and s h)
+     (define ssl? (string=? s "https"))
+     (define-values (status-line headers body-input)
+       ; TODO Timeout. Currently hangs on slow connections.
+       (http-sendrecv
+         h
+         (url->string (struct-copy url u [scheme #f] [host #f]))
+         #:ssl? ssl?
+         #:port (cond [p p] [ssl? 443] [else 80])
+         #:headers (list (format "User-Agent: ~a" user-agent))
+         ))
+     (log-debug "headers: ~v" headers)
+     (log-debug "status-line: ~v" status-line)
+     (define status
+       (string->number (second (string-split (bytes->string/utf-8 status-line)))))
+     (log-debug "status: ~v" status)
+     ; TODO Handle redirects
+     (if (= 200 status)
+         (call-with-output-file cache-file-path
+                                (λ (cache-output)
+                                   (copy-port body-input cache-output))
+                                #:exists 'replace)
+         (raise status))]
+    [(_ _ _)
+     (log-error "Invalid URI: ~v" u)]))
 
 (define (timeline-print out-format timeline)
   (void (foldl (match-lambda**
@@ -206,34 +278,25 @@
                timeline)))
 
 ; feed->msgs : Feed -> (Listof Msg)
-(define (feed->msgs feed)
-  (log-info "Reading feed nick:~a uri:~a"
-            (feed-nick feed)
-            (feed-uri feed))
-  (define uri (feed-uri feed))
-  (str->msgs (feed-nick feed) uri (uri-read-cached uri)))
+(define (feed->msgs f)
+  (match-define (feed nick uri) f)
+  (log-info "Reading feed nick:~a uri:~v" nick uri)
+  (str->msgs nick uri (uri-read-cached uri)))
 
 ; feed-download : Feed -> Void
-(define (feed-download feed)
-  (log-info "Downloading feed nick:~a uri:~a"
-            (feed-nick feed)
-            (feed-uri feed))
+(define (feed-download f)
+  (match-define (feed nick uri) f)
+  (log-info "Downloading feed nick:~a uri:~a" nick (url->string uri))
   (with-handlers
-    ([exn:fail:network?
+    ([exn:fail?
        (λ (e)
-          (log-error "Network error nick:~a uri:~a  exn:~a"
-                     (feed-nick feed)
-                     (feed-uri feed)
-                     e)
+          (log-error "Network error nick:~a uri:~v  exn:~v" nick uri e)
           #f)]
      [integer?
        (λ (status)
-          (log-error "HTTP error nick:~a uri:~a  status:~a"
-                     (feed-nick feed)
-                     (feed-uri feed)
-                     status)
+          (log-error "HTTP error nick:~a uri:~a  status:~a" nick uri status)
           #f)])
-    (uri-download (feed-uri feed))))
+    (uri-download uri)))
 
 ; timeline-download : Integer -> (Listof Feed) -> Void
 (define (timeline-download num_workers feeds)
@@ -248,31 +311,6 @@
                 ['new->old >]))
   (sort (append* (filter-map feed->msgs feeds))
         (λ (a b) (cmp (msg-ts_epoch a) (msg-ts_epoch b)))))
-
-(define (str->feed str)
-  ; TODO validation
-  (define toks (string-split str))
-  (apply feed toks))
-
-(define (filter-comments lines)
-  (filter-not (λ (line) (string-prefix? line "#")) lines))
-
-(define (str->feeds str)
-  (map str->feed (filter-comments (str->lines str))))
-
-(define (file->feeds filename)
-  (str->feeds (file->string filename)))
-
-(define (user-agent prog-name prog-version)
-  (let*
-    ([prog-uri       "https://github.com/xandkar/tt"]
-     [user-feed-file (expand-user-path "~/twtxt-me.txt")]
-     [user
-       (if (file-exists? user-feed-file)
-           (let ([user (first (file->feeds user-feed-file))])
-             (format "+~a; @~a" (feed-uri user) (feed-nick user)))
-           (format "+~a" prog-uri))])
-    (format "~a/~a (~a)" prog-name prog-version user)))
 
 (define (start-logger level)
   (let* ([logger       (make-logger #f #f level #f)]
@@ -290,8 +328,6 @@
     (current-logger logger)))
 
 (module+ main
-  (require (prefix-in info: setup/getinfo))
-
   (let ([log-level 'info])
     (command-line
       #:program
@@ -320,16 +356,8 @@
              [("-j" "--jobs")
               njobs "Number of concurrent jobs."
               (set! num_workers (string->number njobs))]
-
              #:args (filename)
-
-             (current-http-client/response-auto #f)
-             (let* ([prog-name    "tt"]
-                    [prog-version ((info:get-info (list prog-name)) 'version)]
-                    [user-agent   (user-agent prog-name prog-version)])
-               (current-http-client/user-agent user-agent))
-             (timeline-download num_workers (file->feeds filename))
-             ))]
+             (timeline-download num_workers (file->feeds filename))))]
         [(or "u" "upload")
          (command-line
              #:program
