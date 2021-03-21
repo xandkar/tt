@@ -12,16 +12,29 @@
 (module+ test
   (require rackunit))
 
+(define-type Url
+  net/url-structs:url)
+
+(define-type Out-Format
+  (U 'single-line
+     'multi-line))
+
+(define-type Timeline-Order
+  (U 'old->new
+     'new->old))
+
 (struct msg
         ([ts_epoch   : Integer]
          [ts_rfc3339 : String]
          [nick       : String]
-         [uri        : net/url-structs:url]
-         [text       : String]))
+         [uri        : Url]
+         [text       : String])
+        #:type-name Msg)
 
 (struct feed
         ([nick : String]
-         [uri  : net/url-structs:url]))
+         [uri  : Url])
+        #:type-name Feed)
 
 (define (concurrent-filter-map num_workers f xs)
   ; TODO preserve order of elements OR communicate that reorder is expected
@@ -65,6 +78,7 @@
          [expected (sort (           filter-map    f xs) <)])
     (check-equal? actual expected "concurrent-filter-map")))
 
+(: msg-print (-> Out-Format Integer Msg Void))
 (define msg-print
   (let* ([colors (vector 36 33)]
          [n      (vector-length colors)])
@@ -85,6 +99,7 @@
                                   (date->string (seconds->date [msg-ts_epoch msg]) #t))
                     nick uri color text)])))))
 
+(: str->msg (-> String Url String (Option Msg)))
 (define str->msg
   ; TODO Split parsing into 2 stages: 1) line->list; 2) rfc3339->epoch.
   (let ([re (pregexp "^(([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})(:([0-9]{2}))?)(\\.[0-9]+)?([^\\s\t]*)[\\s\t]+(.*)$")])
@@ -165,25 +180,31 @@
       (msg-text expected)
       "str->msg text")))
 
+(: str->lines (-> String (Listof String)))
 (define (str->lines str)
   (string-split str (regexp "[\r\n]+")))
 
 (module+ test
   (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
 
+(: str->msgs (-> String Url String (Listof Msg)))
 (define (str->msgs nick uri str)
   (filter-map (λ (line) (str->msg nick uri line)) (str->lines str)))
 
+(: hash-sha1 (-> String String))
 (define (hash-sha1 str)
   (define in (open-input-string str))
   (define digest (sha1 in))
   (close-input-port in)
   digest)
 
+(: url->cache-file-path (-> Url Path-String))
 (define (url->cache-file-path uri)
   ; TODO Replace hashing with encoding
   (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 (url->string uri)))))
 
+; TODO Return Option
+(: uri-read-cached (-> Url String))
 (define (uri-read-cached uri)
   (define path (url->cache-file-path uri))
   (if (file-exists? path)
@@ -192,6 +213,7 @@
         (log-warning "Cache file not found for URI: ~a" (url->string uri))
         "")))
 
+(: str->feed (String (Option Feed)))
 (define (str->feed str)
   (log-debug "Parsing feed string: ~v" str)
   (match (string-split str)
@@ -206,15 +228,19 @@
       (log-error "Invalid feed string: ~v" str)
       #f]))
 
+(: filter-comments (-> (Listof String) (Listof String)))
 (define (filter-comments lines)
   (filter-not (λ (line) (string-prefix? line "#")) lines))
 
+(: str->feeds (-> String (Listof Feed)))
 (define (str->feeds str)
   (filter-map str->feed (filter-comments (str->lines str))))
 
+(: file->feeds (-> Path-String (Listof Feed)))
 (define (file->feeds filename)
   (str->feeds (file->string filename)))
 
+(: user-agent String)
 (define user-agent
   (let*
     ([prog-name      "tt"]
@@ -228,7 +254,7 @@
            (format "+~a" prog-uri))])
     (format "~a/~a (~a)" prog-name prog-version user)))
 
-; uri-download : net/url-structs:url -> Void
+(: uri-download (-> Url Void))
 (define (uri-download u)
   (define cache-file-path (url->cache-file-path u))
   (log-debug "uri-download ~v into ~v" u cache-file-path)
@@ -260,6 +286,7 @@
     [(_ _ _)
      (log-error "Invalid URI: ~v" u)]))
 
+(: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
   (void (foldl (match-lambda**
                  [((and m (msg _ _ nick _ _)) (cons prev-nick i))
@@ -269,13 +296,13 @@
                (cons "" 0)
                timeline)))
 
-; feed->msgs : Feed -> (Listof Msg)
+(: feed->msgs (-> Feed (Listof Msg)))
 (define (feed->msgs f)
   (match-define (feed nick uri) f)
   (log-info "Reading feed nick:~a uri:~v" nick uri)
   (str->msgs nick uri (uri-read-cached uri)))
 
-; feed-download : Feed -> Void
+(: feed-download (-> Feed Void))
 (define (feed-download f)
   (match-define (feed nick uri) f)
   (log-info "Downloading feed nick:~a uri:~a" nick (url->string uri))
@@ -290,13 +317,13 @@
           #f)])
     (uri-download uri)))
 
-; timeline-download : Integer -> (Listof Feed) -> Void
+(: timeline-download (-> Integer (Listof Feed) Void))
 (define (timeline-download num_workers feeds)
   ; TODO No need for map - can just iter
   (void (concurrent-filter-map num_workers feed-download feeds)))
 
 ; TODO timeline contract : time-sorted list of messages
-; timeline-read : (U 'old->new 'new->old) -> (Listof Feeds) -> (Listof Msg)
+(: timeline-read (-> Timeline-Order (Listof Feed) (Listof Msg)))
 (define (timeline-read order feeds)
   (define cmp (match order
                 ['old->new <]
@@ -304,6 +331,7 @@
   (sort (append* (filter-map feed->msgs feeds))
         (λ (a b) (cmp (msg-ts_epoch a) (msg-ts_epoch b)))))
 
+(: start-logger (-> Log-Level Void))
 (define (start-logger level)
   (let* ([logger       (make-logger #f #f level #f)]
          [log-receiver (make-log-receiver logger level)])
