@@ -8,8 +8,6 @@
   net/url-string
   net/url-structs)
 
-(require rfc3339-old)
-
 (module+ test
   (require rackunit))
 
@@ -90,10 +88,9 @@
                                   (date->string (seconds->date [msg-ts_epoch msg]) #t))
                     nick uri color text)])))))
 
-; TODO Implement rfc3339->epoch and remove dependency on rfc3339-old
-
 (define str->msg
-  (let ([re (pregexp "^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?)(\\.[0-9]+)?([^\\s\t]*)[\\s\t]+(.*)$")])
+  ; TODO Split parsing into 2 stages: 1) line->list; 2) rfc3339->epoch.
+  (let ([re (pregexp "^(([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})(:([0-9]{2}))?)(\\.[0-9]+)?([^\\s\t]*)[\\s\t]+(.*)$")])
     (λ (nick uri str)
        (with-handlers*
          ([exn:fail?
@@ -103,18 +100,16 @@
                  str nick (url->string uri) e)
                #f)])
          (match (regexp-match re str)
-           [(list _wholething ts s _fractional tz text)
+           [(list _wholething ts yyyy mm dd HH MM _:SS SS _f tz text)
             (let*
-              ([ts_rfc3339 (string-append ts (if s "" ":00") (if tz tz ""))]
-               [t          (string->rfc3339-record ts_rfc3339)]
-               [s          (rfc3339-record:second t)]
                ; TODO handle tz offset
-               [ts_epoch (find-seconds [if s s 0]
-                                       [rfc3339-record:minute t]
-                                       [rfc3339-record:hour   t]
-                                       [rfc3339-record:mday   t]
-                                       [rfc3339-record:month  t]
-                                       [rfc3339-record:year   t])])
+              ([ts_rfc3339 (string-append ts (if SS "" ":00") (if tz tz ""))]
+               [ts_epoch (find-seconds (if SS (string->number SS) 0)
+                                       (string->number MM)
+                                       (string->number HH)
+                                       (string->number dd)
+                                       (string->number mm)
+                                       (string->number yyyy))])
               (msg ts_epoch ts_rfc3339 nick uri text))]
            [_
              (log-debug "Non-msg line from nick:~a, line:~a" nick str)
