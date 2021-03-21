@@ -2,11 +2,12 @@
 
 (require openssl/sha1)
 (require racket/date)
-(require (prefix-in info: setup/getinfo))
 (require
   net/http-client
   net/url-string
   net/url-structs)
+
+(require (prefix-in info: "info.rkt"))
 
 (module+ test
   (require rackunit))
@@ -221,7 +222,7 @@
 (define user-agent
   (let*
     ([prog-name      "tt"]
-     [prog-version   ((info:get-info (list prog-name)) 'version)]
+     [prog-version   (info:#%info-lookup 'version)]
      [prog-uri       "https://github.com/xandkar/tt"]
      [user-feed-file (expand-user-path "~/twtxt-me.txt")]
      [user

@@ -1,7 +1,7 @@
 - [ ] Convert to Typed Racket
   - requires: build executable (otherwise too slow)
-- [ ] Build executable
-  - requires: fix of "collection not found" when executing the built executable
+- [x] Build executable
+  Implies fix of "collection not found" when executing the built executable
     outside the source directory:
 
     collection-path: collection not found

@@ -25,9 +25,7 @@ instructions
 [Racket](https://download.racket-lang.org/)
 
 ### installation
-1. Run `make install` or `raco pkg install`
-2. Add `$HOME/.racket/7.9/bin` to your `$PATH`
-   (replacing `7.9` with whatever version you have installed)
+`make build && make install` will build and copy `tt` binary into `$PREFIX/bin`.
 
 ### usage
 Download feeds from the Internet:
