@@ -1,4 +1,4 @@
-#lang racket
+#lang typed/racket/no-check
 
 (require openssl/sha1)
 (require racket/date)
@@ -13,19 +13,15 @@
   (require rackunit))
 
 (struct msg
-        (
-         ts_epoch   ; Integer
-         ts_rfc3339 ; String
-         nick       ; String
-         uri        ; net/url-structs:url
-         text       ; String
-         ))
+        ([ts_epoch   : Integer]
+         [ts_rfc3339 : String]
+         [nick       : String]
+         [uri        : net/url-structs:url]
+         [text       : String]))
 
 (struct feed
-        (
-         nick ; String
-         uri  ; net/url-structs:url
-         ))
+        ([nick : String]
+         [uri  : net/url-structs:url]))
 
 (define (concurrent-filter-map num_workers f xs)
   ; TODO preserve order of elements OR communicate that reorder is expected
