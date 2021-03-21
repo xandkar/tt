@@ -17,7 +17,8 @@
 - [ ] Support redirects
   - should permanent redirects update the feed somehow?
 - [ ] Support time ranges (i.e. reading the timeline between given time points)
-- [ ] Implement rfc3339->epoch and remove dependency on rfc3339-old
+- [ ] Implement rfc3339->epoch
+- [x] Remove dependency on rfc3339-old
 - [x] remove dependency on http-client
 - [ ] optional text wrap
 - [ ] write
