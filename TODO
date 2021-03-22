@@ -1,3 +1,8 @@
+- [ ] Output formats:
+  - [x] text long
+  - [x] text short
+  - [ ] HTML
+  - [ ] JSON
 - [ ] Convert to Typed Racket
   - requires: build executable (otherwise too slow)
 - [x] Build executable
