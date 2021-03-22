@@ -339,17 +339,20 @@
 (: feed-download (-> Feed Void))
 (define (feed-download f)
   (match-define (feed nick uri) f)
-  (log-info "Downloading feed nick:~a uri:~a" nick (url->string uri))
+  (define u (url->string uri))
+  (log-info "Downloading feed nick:~a uri:~a" nick u)
   (with-handlers
     ([exn:fail?
        (λ (e)
-          (log-error "Network error nick:~a uri:~v  exn:~v" nick uri e)
+          (log-error "Network error nick:~a uri:~v  exn:~v" nick u e)
           #f)]
      [integer?
        (λ (status)
-          (log-error "HTTP error nick:~a uri:~a  status:~a" nick uri status)
+          (log-error "HTTP error nick:~a uri:~a  status:~a" nick u status)
           #f)])
-    (uri-download uri)))
+    (define-values (_result _tm-cpu-ms tm-real-ms _tm-gc-ms)
+      (time-apply uri-download (list uri)))
+    (log-info "Downloaded in ~a seconds, uri: ~a" (/ tm-real-ms 1000.0) u)))
 
 (: timeline-download (-> Integer (Listof Feed) Void))
 (define (timeline-download num-workers feeds)
@@ -402,7 +405,9 @@
       (current-command-line-arguments (list->vector args))
       (match command
         [(or "d" "download")
-         (let ([num-workers 15]) ; 15 was fastest out of the tried: 1, 5, 10, 20.
+         ; Initially, 15 was fastest out of the tried: 1, 5, 10, 20.  Then I
+         ; started notcing significant slowdowns. Reducing to 5 seems to help.
+         (let ([num-workers 5])
            (command-line
              #:program
              "tt download"
