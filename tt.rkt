@@ -36,13 +36,15 @@
          [uri  : Url])
         #:type-name Feed)
 
+(: concurrent-filter-map (∀ (α β) (-> Natural (-> α β) (Listof α))))
 (define (concurrent-filter-map num-workers f xs)
   ; TODO preserve order of elements OR communicate that reorder is expected
   ; TODO switch from mailboxes to channels
   (define (make-worker id f)
     (define parent (current-thread))
     (λ ()
-       (define self (current-thread))
+       (define self : Thread (current-thread))
+       (: work (∀ (α) (-> α)))
        (define (work)
          (thread-send parent (cons 'next self))
          (match (thread-receive)
@@ -52,6 +54,7 @@
                              (when y (thread-send parent (cons 'result y)))
                              (work))]))
        (work)))
+  (: dispatch (∀ (α β) (-> (Listof Nonnegative-Integer) (Listof α) (Listof β))))
   (define (dispatch ws xs ys)
     (if (empty? ws)
         ys
