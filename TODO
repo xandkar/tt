@@ -77,3 +77,47 @@
     - we could break time periods into blocks
     - how to handle the facts that many(most?) twtxt are unseen by peers
     - longest X wins?
+- [ ] Peer discovery
+  requires:
+    - parse mentions
+    - parse following
+  rough sketch from late 2019:
+
+        let read file =
+            ...
+        let write file peers =
+            ...
+        let fetch peer =
+            (* Fetch could mean either or both of:
+             * - fetch peer's we-are-twtxt.txt
+             * - fetch peer's twtxt.txt and extract mentioned peer URIs
+             * *)
+            ...
+        let test peers =
+            ...
+        let rec discover peers_old =
+            let peers_all =
+                Set.fold peers_old ~init:peers_old ~f:(fun peers p ->
+                    match fetch p with
+                    | Error _ ->
+                        (* TODO: Should p be moved to down set here? *)
+                        log_warning ...;
+                        peers
+                    | Ok peers_fetched ->
+                        Set.union peers peers_fetched
+                )
+            in
+            if Set.empty (Set.diff peers_old peers_all) then
+                peers_all
+            else
+                discover peers_all
+        let rec loop interval peers_old =
+            let peers_all = discover peers_old in
+            let (peers_up, peers_down) = test peers_all in
+            write "peers-all.txt"  peers_all;
+            write "peers-up.txt"   peers_up;
+            write "peers-down.txt" peers_down;
+            sleep interval;
+            loop interval peers_all
+        let () =
+            loop (Sys.argv.(1)) (read "peers-all.txt")
