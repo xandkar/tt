@@ -25,7 +25,7 @@
 
 (struct msg
         ([ts_epoch   : Integer]
-         [ts_rfc3339 : String]
+         [ts-orig    : String]
          [nick       : String]
          [uri        : Url]
          [text       : String])
@@ -94,15 +94,49 @@
                                   (date->string (seconds->date [msg-ts_epoch msg]) #t))
                     nick color text)]
            ['multi-line
-            (printf "~a~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
+            (printf "~a (~a)~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
                     (parameterize ([date-display-format 'rfc2822])
                                   (date->string (seconds->date [msg-ts_epoch msg]) #t))
+                    (msg-ts-orig msg)
                     nick uri color text)])))))
+
+(: rfc3339->epoch (-> String (Option Nonnegative-Integer)))
+(define rfc3339->epoch
+  (let ([re (pregexp "^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})(:([0-9]{2}))?(\\.[0-9]+)?(Z|([+-])([0-9]{1,2}):?([0-9]{2}))?$")])
+    (λ (ts)
+       (match (regexp-match re ts)
+         [(list _wholething yyyy mm dd HH MM _:SS SS _fractional tz-whole tz-sign tz-HH tz-MM)
+          (let*
+            ([tz-offset
+               (match* (tz-whole tz-sign tz-HH tz-MM)
+                 [("Z" #f #f #f)
+                  0]
+                 [(_  (or "-" "+") (? identity h)  (? identity m))
+                  (let ([h (string->number h)]
+                        [m (string->number m)]
+                        ; Reverse to get back to UTC:
+                        [op (match tz-sign ["+" -] ["-" +])])
+                    (op 0 (+ (* 60 m) (* 60 (* 60 h)))))]
+                 [(a b c d)
+                  (log-warning "Impossible TZ string: ~v, components: ~v ~v ~v ~v" tz-whole a b c d)
+                  0])]
+             [ts-orig ts]
+             [local-time? #f]
+             [ts-epoch (find-seconds (if SS (string->number SS) 0)
+                                     (string->number MM)
+                                     (string->number HH)
+                                     (string->number dd)
+                                     (string->number mm)
+                                     (string->number yyyy)
+                                     local-time?)])
+            (+ ts-epoch tz-offset))]
+         [_
+           (log-error "Invalid timestamp: ~v" ts)
+           #f]))))
 
 (: str->msg (-> String Url String (Option Msg)))
 (define str->msg
-  ; TODO Split parsing into 2 stages: 1) line->list; 2) rfc3339->epoch.
-  (let ([re (pregexp "^(([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})(:([0-9]{2}))?)(\\.[0-9]+)?([^\\s\t]*)[\\s\t]+(.*)$")])
+  (let ([re (pregexp "^([^\\s\t]+)[\\s\t]+(.*)$")])
     (λ (nick uri str)
        (with-handlers*
          ([exn:fail?
@@ -112,17 +146,15 @@
                  str nick (url->string uri) e)
                #f)])
          (match (regexp-match re str)
-           [(list _wholething ts yyyy mm dd HH MM _:SS SS _f tz text)
-            (let*
-               ; TODO handle tz offset
-              ([ts_rfc3339 (string-append ts (if SS "" ":00") (if tz tz ""))]
-               [ts_epoch (find-seconds (if SS (string->number SS) 0)
-                                       (string->number MM)
-                                       (string->number HH)
-                                       (string->number dd)
-                                       (string->number mm)
-                                       (string->number yyyy))])
-              (msg ts_epoch ts_rfc3339 nick uri text))]
+           [(list _wholething ts-orig text)
+            (let ([ts-epoch (rfc3339->epoch ts-orig)])
+              (if ts-epoch
+                  (msg ts-epoch ts-orig nick uri text)
+                  (begin
+                    (log-error
+                      "Msg rejected due to invalid timestamp: ~v, nick:~v, uri:~v"
+                      str nick (url->string uri))
+                    #f)))]
            [_
              (log-debug "Non-msg line from nick:~a, line:~a" nick str)
              #f])))))
@@ -148,7 +180,7 @@
             (check-equal? (msg-nick m) n)
             (check-equal? (msg-uri m) u)
             (check-equal? (msg-text m) txt)
-            (check-equal? (msg-ts_rfc3339 m) ts (format "Given: ~v" ts))
+            (check-equal? (msg-ts-orig m) ts (format "Given: ~v" ts))
             )))
 
   (let* ([ts       "2020-11-18T22:22:09-0500"]
@@ -158,15 +190,14 @@
          [uri      "bar"]
          [actual   (str->msg nick uri (string-append ts tab text))]
          [expected (msg 1605756129 ts nick uri text)])
-    ; FIXME re-enable after handling tz offset
-    ;(check-equal?
-    ;  (msg-ts_epoch actual)
-    ;  (msg-ts_epoch expected)
-    ;  "str->msg ts_epoch")
     (check-equal?
-      (msg-ts_rfc3339 actual)
-      (msg-ts_rfc3339 expected)
-      "str->msg ts_rfc3339")
+      (msg-ts_epoch actual)
+      (msg-ts_epoch expected)
+      "str->msg ts_epoch")
+    (check-equal?
+      (msg-ts-orig actual)
+      (msg-ts-orig expected)
+      "str->msg ts-orig")
     (check-equal?
       (msg-nick actual)
       (msg-nick expected)
@@ -189,7 +220,7 @@
 
 (: str->msgs (-> String Url String (Listof Msg)))
 (define (str->msgs nick uri str)
-  (filter-map (λ (line) (str->msg nick uri line)) (str->lines str)))
+  (filter-map (λ (line) (str->msg nick uri line)) (filter-comments (str->lines str))))
 
 (: hash-sha1 (-> String String))
 (define (hash-sha1 str)
@@ -299,7 +330,7 @@
 (: feed->msgs (-> Feed (Listof Msg)))
 (define (feed->msgs f)
   (match-define (feed nick uri) f)
-  (log-info "Reading feed nick:~a uri:~v" nick uri)
+  (log-info "Reading feed nick:~a uri:~v" nick (url->string uri))
   (str->msgs nick uri (uri-read-cached uri)))
 
 (: feed-download (-> Feed Void))
@@ -380,10 +411,10 @@
              (timeline-download num_workers (file->feeds filename))))]
         [(or "u" "upload")
          (command-line
-             #:program
-             "tt upload"
-             #:args ()
-             (if (system (path->string (expand-user-path "~/.tt/upload")))
+           #:program
+           "tt upload"
+           #:args ()
+           (if (system (path->string (expand-user-path "~/.tt/upload")))
                (exit 0)
                (exit 1)))]
         [(or "r" "read")
