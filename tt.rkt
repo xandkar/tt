@@ -24,7 +24,7 @@
      'new->old))
 
 (struct msg
-        ([ts_epoch   : Integer]
+        ([ts-epoch   : Integer]
          [ts-orig    : String]
          [nick       : String]
          [uri        : Url]
@@ -36,7 +36,7 @@
          [uri  : Url])
         #:type-name Feed)
 
-(define (concurrent-filter-map num_workers f xs)
+(define (concurrent-filter-map num-workers f xs)
   ; TODO preserve order of elements OR communicate that reorder is expected
   ; TODO switch from mailboxes to channels
   (define (make-worker id f)
@@ -65,7 +65,7 @@
                               [(cons x xs) (begin
                                              (thread-send thd (cons 'unit x))
                                              (dispatch ws xs ys))])])))
-  (define workers (range num_workers))
+  (define workers (range num-workers))
   (define threads (map (λ (id) (thread (make-worker id f))) workers))
   (define results (dispatch workers xs '()))
   (for-each thread-wait threads)
@@ -91,12 +91,12 @@
            ['single-line
             (printf "~a  \033[1;37m<~a>\033[0m  \033[0;~am~a\033[0m~n"
                     (parameterize ([date-display-format 'iso-8601])
-                                  (date->string (seconds->date [msg-ts_epoch msg]) #t))
+                                  (date->string (seconds->date [msg-ts-epoch msg]) #t))
                     nick color text)]
            ['multi-line
             (printf "~a (~a)~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
                     (parameterize ([date-display-format 'rfc2822])
-                                  (date->string (seconds->date [msg-ts_epoch msg]) #t))
+                                  (date->string (seconds->date [msg-ts-epoch msg]) #t))
                     (msg-ts-orig msg)
                     nick uri color text)])))))
 
@@ -191,9 +191,9 @@
          [actual   (str->msg nick uri (string-append ts tab text))]
          [expected (msg 1605756129 ts nick uri text)])
     (check-equal?
-      (msg-ts_epoch actual)
-      (msg-ts_epoch expected)
-      "str->msg ts_epoch")
+      (msg-ts-epoch actual)
+      (msg-ts-epoch expected)
+      "str->msg ts-epoch")
     (check-equal?
       (msg-ts-orig actual)
       (msg-ts-orig expected)
@@ -349,9 +349,9 @@
     (uri-download uri)))
 
 (: timeline-download (-> Integer (Listof Feed) Void))
-(define (timeline-download num_workers feeds)
+(define (timeline-download num-workers feeds)
   ; TODO No need for map - can just iter
-  (void (concurrent-filter-map num_workers feed-download feeds)))
+  (void (concurrent-filter-map num-workers feed-download feeds)))
 
 ; TODO timeline contract : time-sorted list of messages
 (: timeline-read (-> Timeline-Order (Listof Feed) (Listof Msg)))
@@ -360,7 +360,7 @@
                 ['old->new <]
                 ['new->old >]))
   (sort (append* (filter-map feed->msgs feeds))
-        (λ (a b) (cmp (msg-ts_epoch a) (msg-ts_epoch b)))))
+        (λ (a b) (cmp (msg-ts-epoch a) (msg-ts-epoch b)))))
 
 (: start-logger (-> Log-Level Void))
 (define (start-logger level)
@@ -399,16 +399,16 @@
       (current-command-line-arguments (list->vector args))
       (match command
         [(or "d" "download")
-         (let ([num_workers 15]) ; 15 was fastest out of the tried: 1, 5, 10, 20.
+         (let ([num-workers 15]) ; 15 was fastest out of the tried: 1, 5, 10, 20.
            (command-line
              #:program
              "tt download"
              #:once-each
              [("-j" "--jobs")
               njobs "Number of concurrent jobs."
-              (set! num_workers (string->number njobs))]
+              (set! num-workers (string->number njobs))]
              #:args (filename)
-             (timeline-download num_workers (file->feeds filename))))]
+             (timeline-download num-workers (file->feeds filename))))]
         [(or "u" "upload")
          (command-line
            #:program
