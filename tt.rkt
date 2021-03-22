@@ -293,7 +293,7 @@
     ([prog-name      "tt"]
      [prog-version   (info:#%info-lookup 'version)]
      [prog-uri       "https://github.com/xandkar/tt"]
-     [user-feed-file (expand-user-path "~/twtxt-me.txt")]
+     [user-feed-file (build-path tt-home-dir "me")]
      [user
        (if (file-exists? user-feed-file)
            (let ([user (first (file->feeds user-feed-file))])
