@@ -354,7 +354,7 @@
 (define (feed-download f)
   (match-define (feed nick uri) f)
   (define u (url->string uri))
-  (log-info "Downloading feed nick:~a uri:~a" nick u)
+  (log-info "Downloading feed uri:~a" u)
   (with-handlers
     ([exn:fail?
        (λ (e)
@@ -366,7 +366,7 @@
           #f)])
     (define-values (_result _tm-cpu-ms tm-real-ms _tm-gc-ms)
       (time-apply uri-download (list uri)))
-    (log-info "Downloaded in ~a seconds, uri: ~a" (/ tm-real-ms 1000.0) u)))
+    (log-info "Feed downloaded in ~a seconds, uri: ~a" (/ tm-real-ms 1000.0) u)))
 
 (: timeline-download (-> Integer (Listof Feed) Void))
 (define (timeline-download num-workers feeds)
@@ -431,7 +431,11 @@
               njobs "Number of concurrent jobs."
               (set! num-workers (string->number njobs))]
              #:args (filename)
-             (timeline-download num-workers (file->feeds filename))))]
+             (define-values (_res _cpu real-ms _gc)
+               (time-apply timeline-download (list num-workers (file->feeds filename))))
+             ; TODO Sync with logger before exit
+             (eprintf "Timeline downloaded in ~a seconds.~n" (/ real-ms 1000.0))
+             ))]
         [(or "u" "upload")
          (command-line
            #:program
