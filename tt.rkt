@@ -4,6 +4,7 @@
 (require racket/date)
 (require
   net/http-client
+  net/uri-codec
   net/url-string
   net/url-structs)
 
@@ -35,6 +36,9 @@
         ([nick : String]
          [uri  : Url])
         #:type-name Feed)
+
+(: tt-home-dir Path-String)
+(define tt-home-dir (build-path (expand-user-path "~") ".tt"))
 
 (: concurrent-filter-map (∀ (α β) (-> Natural (-> α β) (Listof α))))
 (define (concurrent-filter-map num-workers f xs)
@@ -225,24 +229,33 @@
 (define (str->msgs nick uri str)
   (filter-map (λ (line) (str->msg nick uri line)) (filter-comments (str->lines str))))
 
-(: hash-sha1 (-> String String))
-(define (hash-sha1 str)
-  (define in (open-input-string str))
-  (define digest (sha1 in))
-  (close-input-port in)
-  digest)
+(: cache-dir Path-String)
+(define cache-dir (build-path tt-home-dir "cache"))
 
-(: url->cache-file-path (-> Url Path-String))
-(define (url->cache-file-path uri)
-  ; TODO Replace hashing with encoding
-  (expand-user-path (string-append "~/.tt/cache/" (hash-sha1 (url->string uri)))))
+(: url->cache-file-path-v1 (-> Url Path-String))
+(define (url->cache-file-path-v1 uri)
+  (define (hash-sha1 str) : (-> String String)
+    (define in (open-input-string str))
+    (define digest (sha1 in))
+    (close-input-port in)
+    digest)
+  (build-path cache-dir (hash-sha1 (url->string uri))))
+
+(: url->cache-file-path-v2 (-> Url Path-String))
+(define (url->cache-file-path-v2 uri)
+  (build-path cache-dir (uri-encode (url->string uri))))
+
+(define url->cache-file-path url->cache-file-path-v2)
 
 ; TODO Return Option
 (: uri-read-cached (-> Url String))
 (define (uri-read-cached uri)
-  (define path (url->cache-file-path uri))
-  (if (file-exists? path)
-      (file->string path)
+  (define path-v1 (url->cache-file-path-v1 uri))
+  (define path-v2 (url->cache-file-path-v2 uri))
+  (when (file-exists? path-v1)
+    (rename-file-or-directory path-v1 path-v2 #t))
+  (if (file-exists? path-v2)
+      (file->string path-v2)
       (begin
         (log-warning "Cache file not found for URI: ~a" (url->string uri))
         "")))
@@ -312,10 +325,11 @@
      (log-debug "status: ~v" status)
      ; TODO Handle redirects
      (if (= 200 status)
-         (call-with-output-file cache-file-path
-                                (λ (cache-output)
-                                   (copy-port body-input cache-output))
-                                #:exists 'replace)
+         (begin
+           (make-parent-directory* cache-file-path)
+           (call-with-output-file cache-file-path
+                                  (curry copy-port body-input)
+                                  #:exists 'replace))
          (raise status))]
     [(_ _ _)
      (log-error "Invalid URI: ~v" u)]))
@@ -398,6 +412,7 @@
       "and <command> is one of"
       "r, read i   : Read the timeline."
       "d, download : Download the timeline."
+      ; TODO Add path dynamically
       "u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload)."
       ""
       #:args (command . args)
@@ -406,7 +421,7 @@
       (match command
         [(or "d" "download")
          ; Initially, 15 was fastest out of the tried: 1, 5, 10, 20.  Then I
-         ; started notcing significant slowdowns. Reducing to 5 seems to help.
+         ; started noticing significant slowdowns. Reducing to 5 seems to help.
          (let ([num-workers 5])
            (command-line
              #:program
@@ -422,7 +437,7 @@
            #:program
            "tt upload"
            #:args ()
-           (if (system (path->string (expand-user-path "~/.tt/upload")))
+           (if (system (path->string (build-path tt-home-dir "upload")))
                (exit 0)
                (exit 1)))]
         [(or "r" "read")
