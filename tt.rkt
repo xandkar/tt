@@ -382,21 +382,29 @@
   (sort (append* (filter-map feed->msgs feeds))
         (λ (a b) (cmp (msg-ts-epoch a) (msg-ts-epoch b)))))
 
-(: start-logger (-> Log-Level Void))
-(define (start-logger level)
-  (let* ([logger       (make-logger #f #f level #f)]
-         [log-receiver (make-log-receiver logger level)])
-    (void (thread (λ ()
-                     (parameterize
-                       ([date-display-format 'iso-8601])
-                       (let loop ()
-                         (define data  (sync log-receiver))
-                         (define level (vector-ref data 0))
-                         (define msg   (vector-ref data 1))
-                         (define ts    (date->string (current-date) #t))
-                         (eprintf "~a [~a] ~a~n" ts level msg)
-                         (loop))))))
-    (current-logger logger)))
+(: log-writer-stop (-> Thread Void))
+(define (log-writer-stop log-writer)
+  (log-message (current-logger) 'fatal 'stop "Exiting." #f)
+  (thread-wait log-writer))
+
+(: logger-start (-> Log-Level Thread))
+(define (logger-start level)
+  (let* ([logger
+           (make-logger #f #f level #f)]
+         [log-receiver
+           (make-log-receiver logger level)]
+         [log-writer
+           (thread
+             (λ ()
+                (parameterize
+                  ([date-display-format 'iso-8601])
+                  (let loop ()
+                    (match-define (vector level msg _ topic) (sync log-receiver))
+                    (unless (equal? topic 'stop)
+                      (eprintf "~a [~a] ~a~n" (date->string (current-date) #t) level msg)
+                      (loop))))))])
+    (current-logger logger)
+    log-writer))
 
 (module+ main
   (let ([log-level 'info])
@@ -416,7 +424,7 @@
       "u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload)."
       ""
       #:args (command . args)
-      (start-logger log-level)
+      (define log-writer (logger-start log-level))
       (current-command-line-arguments (list->vector args))
       (match command
         [(or "d" "download")
@@ -433,9 +441,8 @@
              #:args (filename)
              (define-values (_res _cpu real-ms _gc)
                (time-apply timeline-download (list num-workers (file->feeds filename))))
-             ; TODO Sync with logger before exit
-             (eprintf "Timeline downloaded in ~a seconds.~n" (/ real-ms 1000.0))
-             ))]
+             (log-info "Timeline downloaded in ~a seconds." (/ real-ms 1000.0))
+             (log-writer-stop log-writer)))]
         [(or "u" "upload")
          (command-line
            #:program
