@@ -64,4 +64,16 @@
   Looks like a better CLI parser than "racket/cmdline": https://docs.racket-lang.org/natural-cli/
   But it is no longer necessary now that I've figured out how to chain (command-line ..) calls.
 - [ ] Suport immutable timelines
-    - store individual messages (possibly in something like DBM or SQLite)
+    - store individual messages
+      - where?
+        - something like DBM or SQLite - faster
+        - filesystem - transparent, easily published - probably best
+  - [ ] block(chain/tree) of twtxts
+    - distributed twtxt.db
+    - each twtxt.txt is a ledger
+    - peers can verify states of ledgers
+    - peers can publish known nick->url mappings
+    - peers can vote on nick->url mappings
+    - we could break time periods into blocks
+    - how to handle the facts that many(most?) twtxt are unseen by peers
+    - longest X wins?
