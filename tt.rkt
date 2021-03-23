@@ -400,8 +400,8 @@
   (log-message (current-logger) 'fatal 'stop "Exiting." #f)
   (thread-wait log-writer))
 
-(: logger-start (-> Log-Level Thread))
-(define (logger-start level)
+(: log-writer-start (-> Log-Level Thread))
+(define (log-writer-start level)
   (let* ([logger
            (make-logger #f #f level #f)]
          [log-receiver
@@ -437,7 +437,7 @@
       "u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload)."
       ""
       #:args (command . args)
-      (define log-writer (logger-start log-level))
+      (define log-writer (log-writer-start log-level))
       (current-command-line-arguments (list->vector args))
       (match command
         [(or "d" "download")
@@ -454,8 +454,7 @@
              #:args (filename)
              (define-values (_res _cpu real-ms _gc)
                (time-apply timeline-download (list num-workers (file->peers filename))))
-             (log-info "Timeline downloaded in ~a seconds." (/ real-ms 1000.0))
-             (log-writer-stop log-writer)))]
+             (log-info "Timeline downloaded in ~a seconds." (/ real-ms 1000.0))))]
         [(or "u" "upload")
          (command-line
            #:program
@@ -482,5 +481,5 @@
               "Long output format"
               (set! out-format 'multi-line)]
              #:args (filename)
-             (timeline-print out-format (timeline-read order (file->peers filename)))))]
-        ))))
+             (timeline-print out-format (timeline-read order (file->peers filename)))))])
+      (log-writer-stop log-writer))))
