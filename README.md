@@ -22,7 +22,13 @@ instructions
 ------------
 
 ### requirements
+
+#### manual
 [Racket](https://download.racket-lang.org/)
+
+#### package manager
+- Void Linux: `xbps-install racket`
+- Debian: `apt install racket`
 
 ### installation
 `make build && make install` will build and copy `tt` binary into `$PREFIX/bin`.
