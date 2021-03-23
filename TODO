@@ -1,4 +1,6 @@
 # vim:sw=2:sts=2:
+- [ ] stats
+  - [ ] download times per peer
 - [ ] Output formats:
   - [x] text long
   - [x] text short
