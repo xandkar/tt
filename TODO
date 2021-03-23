@@ -93,6 +93,9 @@ In-progress
 
 Backlog
 -------
+- [ ] Check for peer duplicates:
+  - [ ] same nick for N>1 URIs
+  - [ ] same URI for N>1 nicks
 - [ ] Background polling and incremental timeline updates.
   We can mark which messages have already been printed and print new ones as
   they come in.
