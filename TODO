@@ -90,6 +90,8 @@ In-progress
 
 Backlog
 -------
+- [ ] Use ETag to prevent redundant downloads
+- [ ] Polling mode/command, where tt periodically polls peer timelines
 - [ ] nick tiebreaker(s)
   - [ ] some sort of a hash of URI?
   - [ ] angry-purple-tiger kind if thingie?
