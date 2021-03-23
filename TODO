@@ -1,57 +1,22 @@
 # vim:sw=2:sts=2:
-- [ ] stats
-  - [ ] download times per peer
-- [ ] Output formats:
-  - [x] text long
-  - [x] text short
-  - [ ] HTML
-  - [ ] JSON
-- [ ] Convert to Typed Racket
-  - requires: build executable (otherwise too slow)
-- [x] Build executable
-  Implies fix of "collection not found" when executing the built executable
-    outside the source directory:
+TODO
+====
 
-    collection-path: collection not found
-      collection: "tt"
-      in collection directories:
-      context...:
-       /usr/share/racket/collects/racket/private/collect.rkt:11:53: fail
-       /usr/share/racket/collects/setup/getinfo.rkt:17:0: get-info
-       /usr/share/racket/collects/racket/contract/private/arrow-val-first.rkt:555:3
-       /usr/share/racket/collects/racket/cmdline.rkt:191:51
-       '|#%mzc:p
+Legend:
+- [ ] not started
+- [-] in-progress
+- [x] done
+- [~] cancelled
 
-- [ ] Support redirects
-  - should permanent redirects update the feed somehow?
-- [ ] Support time ranges (i.e. reading the timeline between given time points)
-- [x] Implement rfc3339->epoch
-- [x] Remove dependency on rfc3339-old
-- [x] remove dependency on http-client
-- [ ] optional text wrap
-- [ ] write
-- [x] caching (use cache by default, unless explicitly asked for update)
-  - [x] value --> cache
-  - [x] value <-- cache
-    requires: d command
-- [ ] timeline limits
-- [ ] feed set operations (perhaps better done externally?)
-- [ ] timeline as a result of a query (feed set op + filter expressions)
-- [ ] named timelines
-- [ ] config files
-- [ ] parse "following" from feed
-  - following = <nick> <uri>
-- [x] parse mentions:
-  - [x] @<source.nick source.url>
-  - [x] @<source.url>
-- [ ] highlight mentions
-- [ ] filter on mentions
-- [ ] highlight hashtags
-- [ ] filter on hashtags
-- [ ] hashtags as channels? initial hashtag special?
-- [ ] query language
-- [ ] console logger colors by level ('error)
-- [ ] file logger ('debug)
+In-progress
+-----------
+
+- [-] Convert to Typed Racket
+  - [x] build executable (otherwise too-slow)
+  - [-] add signatures
+    - [x] top-level
+    - [ ] inner
+    - [ ] imports
 - [-] commands:
   - [x] r | read
     - see timeline ops above
@@ -62,29 +27,26 @@
     - see timeline ops above
     - see hashtag and channels above
   - [x] d | download
+    - [ ] options:
+      - [ ] all - use all known peers
+      - [ ] fast - all except peers known to be slow or unavailable
+        REQUIRES: stats
   - [x] u | upload
     - calls user-configured command to upload user's own feed file to their server
   Looks like a better CLI parser than "racket/cmdline": https://docs.racket-lang.org/natural-cli/
   But it is no longer necessary now that I've figured out how to chain (command-line ..) calls.
-- [ ] Suport immutable timelines
-    - store individual messages
-      - where?
-        - something like DBM or SQLite - faster
-        - filesystem - transparent, easily published - probably best
-  - [ ] block(chain/tree) of twtxts
-    - distributed twtxt.db
-    - each twtxt.txt is a ledger
-    - peers can verify states of ledgers
-    - peers can publish known nick->url mappings
-    - peers can vote on nick->url mappings
-    - we could break time periods into blocks
-    - how to handle the facts that many(most?) twtxt are unseen by peers
-    - longest X wins?
-- [ ] Peer discovery
-  requires:
-    - parse mentions
-    - parse following
-  rough sketch from late 2019:
+- [-] Output formats:
+  - [x] text long
+  - [x] text short
+  - [ ] HTML
+  - [ ] JSON
+- [-] Peer discovery
+  - [-] parse peer refs from peer timelines
+    - [x] mentions from timeline messages
+      - [x] @<source.nick source.url>
+      - [x] @<source.url>
+    - [x] "following" from timeline comments: # following = <nick> <uri>
+  Rough sketch from late 2019:
 
         let read file =
             ...
@@ -124,3 +86,77 @@
             loop interval peers_all
         let () =
             loop (Sys.argv.(1)) (read "peers-all.txt")
+
+Backlog
+-------
+- [ ] nick tiebreaker(s)
+  - [ ] some sort of a hash of URI?
+  - [ ] angry-purple-tiger kind if thingie?
+  - [ ] P2P nick registration?
+    - [ ] Peers vote by claiming to have seen a nick->uri mapping?
+          The inherent race condition would be a feature, since all user name
+          registrations are races.
+          REQUIRES: blockchain
+- [ ] stats
+  - [ ] download times per peer
+- [ ] Support redirects
+  - should permanent redirects update the feed somehow?
+- [ ] Support time ranges (i.e. reading the timeline between given time points)
+- [ ] optional text wrap
+- [ ] write
+- [ ] timeline limits
+- [ ] feed set operations (perhaps better done externally?)
+- [ ] timeline as a result of a query (feed set op + filter expressions)
+- [ ] config files
+- [ ] highlight mentions
+- [ ] filter on mentions
+- [ ] highlight hashtags
+- [ ] filter on hashtags
+- [ ] hashtags as channels? initial hashtag special?
+- [ ] query language
+- [ ] console logger colors by level ('error)
+- [ ] file logger ('debug)
+- [ ] Suport immutable timelines
+  - store individual messages
+    - where?
+      - something like DBM or SQLite - faster
+      - filesystem - transparent, easily published - probably best
+  - [ ] block(chain/tree) of twtxts
+    - distributed twtxt.db
+    - each twtxt.txt is a ledger
+    - peers can verify states of ledgers
+    - peers can publish known nick->url mappings
+    - peers can vote on nick->url mappings
+    - we could break time periods into blocks
+    - how to handle the facts that many(most?) twtxt are unseen by peers
+    - longest X wins?
+
+Done
+----
+- [x] caching (use cache by default, unless explicitly asked for update)
+  - [x] value --> cache
+  - [x] value <-- cache
+    REQUIRES: d command
+- [x] Logger sync before exit.
+- [x] Implement rfc3339->epoch
+- [x] Remove dependency on rfc3339-old
+- [x] remove dependency on http-client
+- [x] Build executable
+  Implies fix of "collection not found" when executing the built executable
+    outside the source directory:
+
+    collection-path: collection not found
+      collection: "tt"
+      in collection directories:
+      context...:
+       /usr/share/racket/collects/racket/private/collect.rkt:11:53: fail
+       /usr/share/racket/collects/setup/getinfo.rkt:17:0: get-info
+       /usr/share/racket/collects/racket/contract/private/arrow-val-first.rkt:555:3
+       /usr/share/racket/collects/racket/cmdline.rkt:191:51
+       '|#%mzc:p
+
+
+Cancelled
+---------
+- [~] named timelines/peer-sets
+  REASON: That is basically files of peers, which we already support.
