@@ -46,6 +46,8 @@ In-progress
       - [x] @<source.nick source.url>
       - [x] @<source.url>
     - [x] "following" from timeline comments: # following = <nick> <uri>
+  - [ ] Parse User-Agent web access logs.
+
   Rough sketch from late 2019:
 
         let read file =
