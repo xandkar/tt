@@ -31,7 +31,8 @@ instructions
 - Debian: `apt install racket`
 
 ### installation
-`make build && make install` will build and copy `tt` binary into `$PREFIX/bin`.
+`make build && make install` will build and copy `tt` binary into
+`$PREFIX/bin`, where `$PREFIX` defaults to `$HOME`.
 
 ### configuration
 Put your `<nick>` and `<uri>` into `~/.tt/me`. For example, mine is:
