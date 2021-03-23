@@ -32,7 +32,7 @@ In-progress
       - [ ] fast - all except peers known to be slow or unavailable
         REQUIRES: stats
   - [x] u | upload
-    - calls user-configured command to upload user's own feed file to their server
+    - calls user-configured command to upload user's own timeline file to their server
   Looks like a better CLI parser than "racket/cmdline": https://docs.racket-lang.org/natural-cli/
   But it is no longer necessary now that I've figured out how to chain (command-line ..) calls.
 - [-] Output formats:
@@ -100,13 +100,13 @@ Backlog
 - [ ] stats
   - [ ] download times per peer
 - [ ] Support redirects
-  - should permanent redirects update the feed somehow?
+  - should permanent redirects update the peer ref somehow?
 - [ ] Support time ranges (i.e. reading the timeline between given time points)
 - [ ] optional text wrap
 - [ ] write
 - [ ] timeline limits
-- [ ] feed set operations (perhaps better done externally?)
-- [ ] timeline as a result of a query (feed set op + filter expressions)
+- [ ] peer refs set operations (perhaps better done externally?)
+- [ ] timeline as a result of a query (peer ref set op + filter expressions)
 - [ ] config files
 - [ ] highlight mentions
 - [ ] filter on mentions
