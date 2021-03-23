@@ -39,7 +39,7 @@
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
 
-(: concurrent-filter-map (∀ (α β) (-> Natural (-> α β) (Listof α))))
+(: concurrent-filter-map (∀ (α β) (-> Natural (-> α β) (Listof α) (Listof β))))
 (define (concurrent-filter-map num-workers f xs)
   ; TODO preserve order of elements OR communicate that reorder is expected
   ; TODO switch from mailboxes to channels
