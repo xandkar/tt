@@ -90,6 +90,10 @@ In-progress
 
 Backlog
 -------
+- [ ] Background polling and incremental timeline updates.
+  We can mark which messages have already been printed and print new ones as
+  they come in.
+  REQUIRES: polling
 - [ ] Use ETag to prevent redundant downloads
 - [ ] Polling mode/command, where tt periodically polls peer timelines
 - [ ] nick tiebreaker(s)
