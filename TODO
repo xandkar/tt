@@ -23,6 +23,9 @@ In-progress
   - [ ] w | write
     - arg or stdin
     - nick expand to URI
+    - Watch FIFO for lines, then read, timestamp and append [+ upload].
+      Can be part of a "live" mode, along with background polling and
+      incremental printing. Sort of an ii-like IRC experience.
   - [ ] q | query
     - see timeline ops above
     - see hashtag and channels above
