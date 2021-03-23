@@ -27,12 +27,29 @@ instructions
 ### installation
 `make build && make install` will build and copy `tt` binary into `$PREFIX/bin`.
 
+### configuration
+Put your `<nick>` and `<uri>` into `~/.tt/me`. For example, mine is:
+
+```
+$ cat ~/.tt/me
+xandkar https://xandkar.net/twtxt.txt
+```
+It will be used to fill the `User-Agent` header, so that others can tell you're
+reading their twtxts and perhaps read yours. This isn't strictly necessary and
+if omitted, you'll stay anonymous.
+
 ### usage
 Download feeds from the Internet:
 `tt d (FOLLOW-FILE)`
 
 Read your timeline:
 `tt r (FOLLOW-FILE)`
+
+`FOLLOW-FILE` contains lines with space-separated nick and twtxt.txt URI, like:
+
+```
+xandkar https://xandkar.net/twtxt.txt
+```
 
 See the rest of the usage options:
 `tt -h`
