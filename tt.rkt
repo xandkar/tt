@@ -27,13 +27,14 @@
 (struct msg
         ([ts-epoch   : Integer]
          [ts-orig    : String]
-         [nick       : String]
+         [nick       : (Option String)]
          [uri        : Url]
-         [text       : String])
+         [text       : String]
+         [mentions   : (Listof Feed)])
         #:type-name Msg)
 
 (struct feed
-        ([nick : String]
+        ([nick : (Option String)]
          [uri  : Url])
         #:type-name Feed)
 
@@ -93,19 +94,24 @@
        (let ([color (vector-ref colors (modulo color-i n))]
              [nick  (msg-nick msg)]
              [uri   (url->string (msg-uri msg))]
-             [text  (msg-text msg)])
+             [text  (msg-text msg)]
+             [mentions (msg-mentions msg)])
          (match out-format
            ['single-line
-            (printf "~a  \033[1;37m<~a>\033[0m  \033[0;~am~a\033[0m~n"
-                    (parameterize ([date-display-format 'iso-8601])
-                                  (date->string (seconds->date [msg-ts-epoch msg]) #t))
-                    nick color text)]
+            (let ([nick (if nick nick uri)])
+              (printf "~a  \033[1;37m<~a>\033[0m  \033[0;~am~a\033[0m~n"
+                      (parameterize
+                        ([date-display-format 'iso-8601])
+                        (date->string (seconds->date [msg-ts-epoch msg]) #t))
+                      nick color text))]
            ['multi-line
-            (printf "~a (~a)~n\033[1;37m<~a ~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
-                    (parameterize ([date-display-format 'rfc2822])
-                                  (date->string (seconds->date [msg-ts-epoch msg]) #t))
-                    (msg-ts-orig msg)
-                    nick uri color text)])))))
+            (let ([nick (if nick (string-append nick " ") "")])
+              (printf "~a (~a)~n\033[1;37m<~a~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
+                      (parameterize
+                        ([date-display-format 'rfc2822])
+                        (date->string (seconds->date [msg-ts-epoch msg]) #t))
+                      (msg-ts-orig msg)
+                      nick uri color text))])))))
 
 (: rfc3339->epoch (-> String (Option Nonnegative-Integer)))
 (define rfc3339->epoch
@@ -141,7 +147,7 @@
            (log-error "Invalid timestamp: ~v" ts)
            #f]))))
 
-(: str->msg (-> String Url String (Option Msg)))
+(: str->msg (-> (Option String) Url String (Option Msg)))
 (define str->msg
   (let ([re (pregexp "^([^\\s\t]+)[\\s\t]+(.*)$")])
     (λ (nick uri str)
@@ -156,17 +162,24 @@
            [(list _wholething ts-orig text)
             (let ([ts-epoch (rfc3339->epoch ts-orig)])
               (if ts-epoch
-                  (msg ts-epoch ts-orig nick uri text)
+                  (let ([mentions
+                          (filter-map
+                            (λ (m) (match (regexp-match #px"@<([^>]+)>" m)
+                                     [(list _wholething nick-uri)
+                                      (str->feed nick-uri)]))
+                            (regexp-match* #px"@<[^\\s]+([\\s]+)?[^>]+>" text))])
+                    (msg ts-epoch ts-orig nick uri text mentions))
                   (begin
                     (log-error
                       "Msg rejected due to invalid timestamp: ~v, nick:~v, uri:~v"
                       str nick (url->string uri))
                     #f)))]
            [_
-             (log-debug "Non-msg line from nick:~a, line:~a" nick str)
+             (log-debug "Non-msg line from nick:~v, line:~a" nick str)
              #f])))))
 
 (module+ test
+  ; TODO Test for when missing-nick case
   (let* ([tzs (for*/list ([d '("-" "+")]
                           [h '("5" "05")]
                           [m '("00" ":00" "57" ":57")])
@@ -225,7 +238,7 @@
 (module+ test
   (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
 
-(: str->msgs (-> String Url String (Listof Msg)))
+(: str->msgs (-> (Option String) Url String (Listof Msg)))
 (define (str->msgs nick uri str)
   (filter-map (λ (line) (str->msg nick uri line)) (filter-comments (str->lines str))))
 
@@ -263,17 +276,18 @@
 (: str->feed (String (Option Feed)))
 (define (str->feed str)
   (log-debug "Parsing feed string: ~v" str)
-  (match (string-split str)
-    [(list nick u)
-     (with-handlers*
-       ([exn:fail?
-          (λ (e)
-             (log-error "Invalid URI: ~v, exn: ~v" u e)
-             #f)])
-       (feed nick (string->url u)))]
-    [_
-      (log-error "Invalid feed string: ~v" str)
-      #f]))
+  (with-handlers*
+    ([exn:fail?
+       (λ (e)
+          (log-error "Invalid URI in string: ~v, exn: ~v" str e)
+          #f)])
+    (match (string-split str)
+      [(list u)   (feed #f  (string->url u))]
+      [(list n u) (feed  n  (string->url u))]
+      [_
+        (log-error "Invalid feed string: ~v" str)
+        #f])))
+
 
 (: filter-comments (-> (Listof String) (Listof String)))
 (define (filter-comments lines)
@@ -296,8 +310,9 @@
      [user-feed-file (build-path tt-home-dir "me")]
      [user
        (if (file-exists? user-feed-file)
-           (let ([user (first (file->feeds user-feed-file))])
-             (format "+~a; @~a" (url->string (feed-uri user)) (feed-nick user)))
+           (match (first (file->feeds user-feed-file))
+             [(feed #f u) (format "+~a"      (url->string u)  )]
+             [(feed  n u) (format "+~a; @~a" (url->string u) n)])
            (format "+~a" prog-uri))])
     (format "~a/~a (~a)" prog-name prog-version user)))
 
@@ -337,8 +352,8 @@
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
   (void (foldl (match-lambda**
-                 [((and m (msg _ _ nick _ _)) (cons prev-nick i))
-                  (let ([i (if (string=? prev-nick nick) i (+ 1 i))])
+                 [((and m (msg _ _ nick _ _ _)) (cons prev-nick i))
+                  (let ([i (if (equal? prev-nick nick) i (+ 1 i))])
                     (msg-print out-format i m)
                     (cons nick i))])
                (cons "" 0)
@@ -347,7 +362,7 @@
 (: feed->msgs (-> Feed (Listof Msg)))
 (define (feed->msgs f)
   (match-define (feed nick uri) f)
-  (log-info "Reading feed nick:~a uri:~v" nick (url->string uri))
+  (log-info "Reading feed nick:~v uri:~v" nick (url->string uri))
   (str->msgs nick uri (uri-read-cached uri)))
 
 (: feed-download (-> Feed Void))
@@ -358,11 +373,11 @@
   (with-handlers
     ([exn:fail?
        (λ (e)
-          (log-error "Network error nick:~a uri:~v  exn:~v" nick u e)
+          (log-error "Network error nick:~v uri:~v  exn:~v" nick u e)
           #f)]
      [integer?
        (λ (status)
-          (log-error "HTTP error nick:~a uri:~a  status:~a" nick u status)
+          (log-error "HTTP error nick:~v uri:~a  status:~a" nick u status)
           #f)])
     (define-values (_result _tm-cpu-ms tm-real-ms _tm-gc-ms)
       (time-apply uri-download (list uri)))

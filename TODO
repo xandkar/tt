@@ -39,8 +39,9 @@
 - [ ] config files
 - [ ] parse "following" from feed
   - following = <nick> <uri>
-- [ ] parse mentions:
-  - @<source.nick source.url> | @<source.url>
+- [x] parse mentions:
+  - [x] @<source.nick source.url>
+  - [x] @<source.url>
 - [ ] highlight mentions
 - [ ] filter on mentions
 - [ ] highlight hashtags
