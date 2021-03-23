@@ -34,7 +34,8 @@
 
 (struct Peer
         ([nick : (Option String)]
-         [uri  : Url]))
+         [uri  : Url])
+        #:transparent)
 
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
@@ -296,8 +297,12 @@
   (filter-map str->peer (filter-comments (str->lines str))))
 
 (: file->peers (-> Path-String (Listof Peer)))
-(define (file->peers filename)
-  (str->peers (file->string filename)))
+(define (file->peers file-path)
+  (if (file-exists? file-path)
+      (str->peers (file->string file-path))
+      (begin
+        (log-error "File does not exist: ~v" (path->string file-path))
+        '())))
 
 (: user-agent String)
 (define user-agent
@@ -395,6 +400,22 @@
   (sort (append* (filter-map peer->msgs peers))
         (λ (a b) (cmp (Msg-ts-epoch a) (Msg-ts-epoch b)))))
 
+(: paths->peers (-> (Listof String) (Listof Peer)))
+(define (paths->peers paths)
+  (let* ([paths (match paths
+                  ['()
+                   (let ([peer-refs-file (build-path tt-home-dir "peers")])
+                     (log-debug
+                       "No peer ref file paths provided, defaulting to ~v"
+                       (path->string peer-refs-file))
+                     (list peer-refs-file))]
+                  [paths
+                    (log-debug "Peer ref file paths provided: ~v" paths)
+                    (map string->path paths)])]
+         [peers (append* (map file->peers paths))])
+    (log-info "Read-in ~a peers." (length peers))
+    peers))
+
 (: log-writer-stop (-> Thread Void))
 (define (log-writer-stop log-writer)
   (log-message (current-logger) 'fatal 'stop "Exiting." #f)
@@ -451,9 +472,9 @@
              [("-j" "--jobs")
               njobs "Number of concurrent jobs."
               (set! num-workers (string->number njobs))]
-             #:args (filename)
+             #:args file-paths
              (define-values (_res _cpu real-ms _gc)
-               (time-apply timeline-download (list num-workers (file->peers filename))))
+               (time-apply timeline-download (list num-workers (paths->peers file-paths))))
              (log-info "Timeline downloaded in ~a seconds." (/ real-ms 1000.0))))]
         [(or "u" "upload")
          (command-line
@@ -480,6 +501,6 @@
              [("-l" "--long")
               "Long output format"
               (set! out-format 'multi-line)]
-             #:args (filename)
-             (timeline-print out-format (timeline-read order (file->peers filename)))))])
+             #:args file-paths
+             (timeline-print out-format (timeline-read order (paths->peers file-paths)))))])
       (log-writer-stop log-writer))))
