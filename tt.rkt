@@ -30,13 +30,12 @@
          [nick       : (Option String)]
          [uri        : Url]
          [text       : String]
-         [mentions   : (Listof Feed)])
+         [mentions   : (Listof Peer)])
         #:type-name Msg)
 
-(struct feed
+(struct Peer
         ([nick : (Option String)]
-         [uri  : Url])
-        #:type-name Feed)
+         [uri  : Url]))
 
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
@@ -166,7 +165,7 @@
                           (filter-map
                             (λ (m) (match (regexp-match #px"@<([^>]+)>" m)
                                      [(list _wholething nick-uri)
-                                      (str->feed nick-uri)]))
+                                      (str->peer nick-uri)]))
                             (regexp-match* #px"@<[^\\s]+([\\s]+)?[^>]+>" text))])
                     (msg ts-epoch ts-orig nick uri text mentions))
                   (begin
@@ -273,19 +272,19 @@
         (log-warning "Cache file not found for URI: ~a" (url->string uri))
         "")))
 
-(: str->feed (String (Option Feed)))
-(define (str->feed str)
-  (log-debug "Parsing feed string: ~v" str)
+(: str->peer (String (Option Peer)))
+(define (str->peer str)
+  (log-debug "Parsing peer string: ~v" str)
   (with-handlers*
     ([exn:fail?
        (λ (e)
           (log-error "Invalid URI in string: ~v, exn: ~v" str e)
           #f)])
     (match (string-split str)
-      [(list u)   (feed #f  (string->url u))]
-      [(list n u) (feed  n  (string->url u))]
+      [(list u)   (Peer #f  (string->url u))]
+      [(list n u) (Peer  n  (string->url u))]
       [_
-        (log-error "Invalid feed string: ~v" str)
+        (log-error "Invalid peer string: ~v" str)
         #f])))
 
 
@@ -293,13 +292,13 @@
 (define (filter-comments lines)
   (filter-not (λ (line) (string-prefix? line "#")) lines))
 
-(: str->feeds (-> String (Listof Feed)))
-(define (str->feeds str)
-  (filter-map str->feed (filter-comments (str->lines str))))
+(: str->peers (-> String (Listof Peer)))
+(define (str->peers str)
+  (filter-map str->peer (filter-comments (str->lines str))))
 
-(: file->feeds (-> Path-String (Listof Feed)))
-(define (file->feeds filename)
-  (str->feeds (file->string filename)))
+(: file->peers (-> Path-String (Listof Peer)))
+(define (file->peers filename)
+  (str->peers (file->string filename)))
 
 (: user-agent String)
 (define user-agent
@@ -307,12 +306,12 @@
     ([prog-name      "tt"]
      [prog-version   (info:#%info-lookup 'version)]
      [prog-uri       "https://github.com/xandkar/tt"]
-     [user-feed-file (build-path tt-home-dir "me")]
+     [user-peer-file (build-path tt-home-dir "me")]
      [user
-       (if (file-exists? user-feed-file)
-           (match (first (file->feeds user-feed-file))
-             [(feed #f u) (format "+~a"      (url->string u)  )]
-             [(feed  n u) (format "+~a; @~a" (url->string u) n)])
+       (if (file-exists? user-peer-file)
+           (match (first (file->peers user-peer-file))
+             [(Peer #f u) (format "+~a"      (url->string u)  )]
+             [(Peer  n u) (format "+~a; @~a" (url->string u) n)])
            (format "+~a" prog-uri))])
     (format "~a/~a (~a)" prog-name prog-version user)))
 
@@ -359,17 +358,17 @@
                (cons "" 0)
                timeline)))
 
-(: feed->msgs (-> Feed (Listof Msg)))
-(define (feed->msgs f)
-  (match-define (feed nick uri) f)
-  (log-info "Reading feed nick:~v uri:~v" nick (url->string uri))
+(: peer->msgs (-> Peer (Listof Msg)))
+(define (peer->msgs f)
+  (match-define (Peer nick uri) f)
+  (log-info "Reading peer nick:~v uri:~v" nick (url->string uri))
   (str->msgs nick uri (uri-read-cached uri)))
 
-(: feed-download (-> Feed Void))
-(define (feed-download f)
-  (match-define (feed nick uri) f)
+(: peer-download (-> Peer Void))
+(define (peer-download f)
+  (match-define (Peer nick uri) f)
   (define u (url->string uri))
-  (log-info "Downloading feed uri:~a" u)
+  (log-info "Downloading peer uri:~a" u)
   (with-handlers
     ([exn:fail?
        (λ (e)
@@ -381,20 +380,20 @@
           #f)])
     (define-values (_result _tm-cpu-ms tm-real-ms _tm-gc-ms)
       (time-apply uri-download (list uri)))
-    (log-info "Feed downloaded in ~a seconds, uri: ~a" (/ tm-real-ms 1000.0) u)))
+    (log-info "Peer downloaded in ~a seconds, uri: ~a" (/ tm-real-ms 1000.0) u)))
 
-(: timeline-download (-> Integer (Listof Feed) Void))
-(define (timeline-download num-workers feeds)
+(: timeline-download (-> Integer (Listof Peer) Void))
+(define (timeline-download num-workers peers)
   ; TODO No need for map - can just iter
-  (void (concurrent-filter-map num-workers feed-download feeds)))
+  (void (concurrent-filter-map num-workers peer-download peers)))
 
 ; TODO timeline contract : time-sorted list of messages
-(: timeline-read (-> Timeline-Order (Listof Feed) (Listof Msg)))
-(define (timeline-read order feeds)
+(: timeline-read (-> Timeline-Order (Listof Peer) (Listof Msg)))
+(define (timeline-read order peers)
   (define cmp (match order
                 ['old->new <]
                 ['new->old >]))
-  (sort (append* (filter-map feed->msgs feeds))
+  (sort (append* (filter-map peer->msgs peers))
         (λ (a b) (cmp (msg-ts-epoch a) (msg-ts-epoch b)))))
 
 (: log-writer-stop (-> Thread Void))
@@ -455,7 +454,7 @@
               (set! num-workers (string->number njobs))]
              #:args (filename)
              (define-values (_res _cpu real-ms _gc)
-               (time-apply timeline-download (list num-workers (file->feeds filename))))
+               (time-apply timeline-download (list num-workers (file->peers filename))))
              (log-info "Timeline downloaded in ~a seconds." (/ real-ms 1000.0))
              (log-writer-stop log-writer)))]
         [(or "u" "upload")
@@ -484,5 +483,5 @@
               "Long output format"
               (set! out-format 'multi-line)]
              #:args (filename)
-             (timeline-print out-format (timeline-read order (file->feeds filename)))))]
+             (timeline-print out-format (timeline-read order (file->peers filename)))))]
         ))))
