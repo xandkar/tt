@@ -24,14 +24,13 @@
   (U 'old->new
      'new->old))
 
-(struct msg
+(struct Msg
         ([ts-epoch   : Integer]
          [ts-orig    : String]
          [nick       : (Option String)]
          [uri        : Url]
          [text       : String]
-         [mentions   : (Listof Peer)])
-        #:type-name Msg)
+         [mentions   : (Listof Peer)]))
 
 (struct Peer
         ([nick : (Option String)]
@@ -91,25 +90,25 @@
          [n      (vector-length colors)])
     (λ (out-format color-i msg)
        (let ([color (vector-ref colors (modulo color-i n))]
-             [nick  (msg-nick msg)]
-             [uri   (url->string (msg-uri msg))]
-             [text  (msg-text msg)]
-             [mentions (msg-mentions msg)])
+             [nick  (Msg-nick msg)]
+             [uri   (url->string (Msg-uri msg))]
+             [text  (Msg-text msg)]
+             [mentions (Msg-mentions msg)])
          (match out-format
            ['single-line
             (let ([nick (if nick nick uri)])
               (printf "~a  \033[1;37m<~a>\033[0m  \033[0;~am~a\033[0m~n"
                       (parameterize
                         ([date-display-format 'iso-8601])
-                        (date->string (seconds->date [msg-ts-epoch msg]) #t))
+                        (date->string (seconds->date (Msg-ts-epoch msg)) #t))
                       nick color text))]
            ['multi-line
             (let ([nick (if nick (string-append nick " ") "")])
               (printf "~a (~a)~n\033[1;37m<~a~a>\033[0m~n\033[0;~am~a\033[0m~n~n"
                       (parameterize
                         ([date-display-format 'rfc2822])
-                        (date->string (seconds->date [msg-ts-epoch msg]) #t))
-                      (msg-ts-orig msg)
+                        (date->string (seconds->date (Msg-ts-epoch msg)) #t))
+                      (Msg-ts-orig msg)
                       nick uri color text))])))))
 
 (: rfc3339->epoch (-> String (Option Nonnegative-Integer)))
@@ -167,7 +166,7 @@
                                      [(list _wholething nick-uri)
                                       (str->peer nick-uri)]))
                             (regexp-match* #px"@<[^\\s]+([\\s]+)?[^>]+>" text))])
-                    (msg ts-epoch ts-orig nick uri text mentions))
+                    (Msg ts-epoch ts-orig nick uri text mentions))
                   (begin
                     (log-error
                       "Msg rejected due to invalid timestamp: ~v, nick:~v, uri:~v"
@@ -196,10 +195,10 @@
                                     z)]
                  [m  (str->msg n u (string-append ts sep txt))])
             (check-not-false m)
-            (check-equal? (msg-nick m) n)
-            (check-equal? (msg-uri m) u)
-            (check-equal? (msg-text m) txt)
-            (check-equal? (msg-ts-orig m) ts (format "Given: ~v" ts))
+            (check-equal? (Msg-nick m) n)
+            (check-equal? (Msg-uri m) u)
+            (check-equal? (Msg-text m) txt)
+            (check-equal? (Msg-ts-orig m) ts (format "Given: ~v" ts))
             )))
 
   (let* ([ts       "2020-11-18T22:22:09-0500"]
@@ -208,26 +207,26 @@
          [nick     "foo"]
          [uri      "bar"]
          [actual   (str->msg nick uri (string-append ts tab text))]
-         [expected (msg 1605756129 ts nick uri text)])
+         [expected (Msg 1605756129 ts nick uri text)])
     (check-equal?
-      (msg-ts-epoch actual)
-      (msg-ts-epoch expected)
+      (Msg-ts-epoch actual)
+      (Msg-ts-epoch expected)
       "str->msg ts-epoch")
     (check-equal?
-      (msg-ts-orig actual)
-      (msg-ts-orig expected)
+      (Msg-ts-orig actual)
+      (Msg-ts-orig expected)
       "str->msg ts-orig")
     (check-equal?
-      (msg-nick actual)
-      (msg-nick expected)
+      (Msg-nick actual)
+      (Msg-nick expected)
       "str->msg nick")
     (check-equal?
-      (msg-uri actual)
-      (msg-uri expected)
+      (Msg-uri actual)
+      (Msg-uri expected)
       "str->msg uri")
     (check-equal?
-      (msg-text actual)
-      (msg-text expected)
+      (Msg-text actual)
+      (Msg-text expected)
       "str->msg text")))
 
 (: str->lines (-> String (Listof String)))
@@ -351,7 +350,7 @@
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
   (void (foldl (match-lambda**
-                 [((and m (msg _ _ nick _ _ _)) (cons prev-nick i))
+                 [((and m (Msg _ _ nick _ _ _)) (cons prev-nick i))
                   (let ([i (if (equal? prev-nick nick) i (+ 1 i))])
                     (msg-print out-format i m)
                     (cons nick i))])
@@ -394,7 +393,7 @@
                 ['old->new <]
                 ['new->old >]))
   (sort (append* (filter-map peer->msgs peers))
-        (λ (a b) (cmp (msg-ts-epoch a) (msg-ts-epoch b)))))
+        (λ (a b) (cmp (Msg-ts-epoch a) (Msg-ts-epoch b)))))
 
 (: log-writer-stop (-> Thread Void))
 (define (log-writer-stop log-writer)
