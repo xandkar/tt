@@ -93,6 +93,7 @@ In-progress
 
 Backlog
 -------
+- [ ] Support fetching rsync URIs
 - [ ] Check for peer duplicates:
   - [ ] same nick for N>1 URIs
   - [ ] same URI for N>1 nicks
