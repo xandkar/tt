@@ -11,10 +11,6 @@ Legend:
 In-progress
 -----------
 
-- [x] Prevent redundant downloads
-  - [x] Check ETag
-  - [ ] Check Last-Modified if no ETag was provided
-    - [ ] Parse rfc2822 timestamps
 - [-] Convert to Typed Racket
   - [x] build executable (otherwise too-slow)
   - [-] add signatures
@@ -149,6 +145,10 @@ Backlog
 
 Done
 ----
+- [x] Prevent redundant downloads
+  - [x] Check ETag
+  - [x] Check Last-Modified if no ETag was provided
+    - [x] Parse rfc2822 timestamps
 - [x] caching (use cache by default, unless explicitly asked for update)
   - [x] value --> cache
   - [x] value <-- cache

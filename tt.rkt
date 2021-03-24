@@ -311,6 +311,43 @@
         (log-error "File does not exist: ~v" (path->string file-path))
         '())))
 
+(define re-rfc2822
+  #px"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), ([0-9]{2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) ([0-9]{4}) ([0-2][0-9]):([0-6][0-9]):([0-6][0-9]) GMT")
+
+(: b->n (-> Bytes (Option Number)))
+(define (b->n b)
+  (string->number (bytes->string/utf-8 b)))
+
+(: mon->num (-> Bytes Natural))
+(define/match (mon->num mon)
+  [(#"Jan")  1]
+  [(#"Feb")  2]
+  [(#"Mar")  3]
+  [(#"Apr")  4]
+  [(#"May")  5]
+  [(#"Jun")  6]
+  [(#"Jul")  7]
+  [(#"Aug")  8]
+  [(#"Sep")  9]
+  [(#"Oct") 10]
+  [(#"Nov") 11]
+  [(#"Dec") 12])
+
+(: rfc2822->epoch (-> Bytes (Option Nonnegative-Integer)))
+(define (rfc2822->epoch timestamp)
+  (match (regexp-match re-rfc2822 timestamp)
+    [(list _ _ dd mo yyyy HH MM SS)
+     #:when (and dd mo yyyy HH MM SS)
+     (find-seconds (b->n SS)
+                   (b->n MM)
+                   (b->n HH)
+                   (b->n dd)
+                   (mon->num mo)
+                   (b->n yyyy)
+                   #f)]
+    [_
+      #f]))
+
 (: user-agent String)
 (define user-agent
   (let*
@@ -349,26 +386,39 @@
   ; TODO Handle redirects
   (match status
     [200
-      (let ([etag (header-get headers #"ETag")]
-            [lmod (header-get headers #"Last-Modified")])
-        (if (and etag
-                 (file-exists? cached-etag-path)
-                 (bytes=? etag (file->bytes cached-etag-path)))
-            (log-info "ETags match, skipping the rest of ~v" (url->string u))
-            (begin
-              (log-info
-                "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
-                (url->string u) etag lmod)
-              (make-parent-directory* cached-object-path)
-              (make-parent-directory* cached-etag-path)
-              (make-parent-directory* cached-lmod-path)
-              (call-with-output-file cached-object-path
-                                     (curry copy-port body-input)
-                                     #:exists 'replace)
-              (when etag
-                (display-to-file etag cached-etag-path #:exists 'replace))
-              (when lmod
-                (display-to-file etag cached-lmod-path #:exists 'replace))))
+      (let* ([etag      (header-get headers #"ETag")]
+             [lmod      (header-get headers #"Last-Modified")]
+             [lmod-curr (if lmod (rfc2822->epoch lmod) #f)]
+             [lmod-prev (if (file-exists? cached-lmod-path)
+                            (rfc2822->epoch (file->bytes cached-lmod-path))
+                            #f)])
+        (log-debug "lmod-curr:~v lmod-prev:~v" lmod-curr lmod-prev)
+        (unless (or (and etag
+                         (file-exists? cached-etag-path)
+                         (bytes=? etag (file->bytes cached-etag-path))
+                         (begin
+                           (log-info "ETags match, skipping the rest of ~v" (url->string u))
+                           #t))
+                    (and lmod-curr
+                         lmod-prev
+                         (<= lmod-curr lmod-prev)
+                         (begin
+                           (log-info "Last-Modified <= current skipping the rest of ~v" (url->string u))
+                           #t)))
+          (begin
+            (log-info
+              "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
+              (url->string u) etag lmod)
+            (make-parent-directory* cached-object-path)
+            (make-parent-directory* cached-etag-path)
+            (make-parent-directory* cached-lmod-path)
+            (call-with-output-file cached-object-path
+                                   (curry copy-port body-input)
+                                   #:exists 'replace)
+            (when etag
+              (display-to-file etag cached-etag-path #:exists 'replace))
+            (when lmod
+              (display-to-file lmod cached-lmod-path #:exists 'replace))))
         (close-input-port body-input))]
     [_
       (raise status)]))
