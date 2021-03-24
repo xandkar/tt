@@ -3,6 +3,7 @@
 (require openssl/sha1)
 (require racket/date)
 (require
+  net/head
   net/http-client
   net/uri-codec
   net/url-string
@@ -244,6 +245,8 @@
 (: cache-dir Path-String)
 (define cache-dir (build-path tt-home-dir "cache"))
 
+(define cache-object-dir (build-path cache-dir "objects"))
+
 (: url->cache-file-path-v1 (-> Url Path-String))
 (define (url->cache-file-path-v1 uri)
   (define (hash-sha1 str) : (-> String String)
@@ -251,13 +254,19 @@
     (define digest (sha1 in))
     (close-input-port in)
     digest)
-  (build-path cache-dir (hash-sha1 (url->string uri))))
+  (build-path cache-object-dir (hash-sha1 (url->string uri))))
 
 (: url->cache-file-path-v2 (-> Url Path-String))
 (define (url->cache-file-path-v2 uri)
-  (build-path cache-dir (uri-encode (url->string uri))))
+  (build-path cache-object-dir (uri-encode (url->string uri))))
 
-(define url->cache-file-path url->cache-file-path-v2)
+(define url->cache-object-path url->cache-file-path-v2)
+
+(define (url->cache-etag-path uri)
+  (build-path cache-dir "etags" (uri-encode (url->string uri))))
+
+(define (url->cache-lmod-path uri)
+  (build-path cache-dir "lmods" (uri-encode (url->string uri))))
 
 ; TODO Return Option
 (: uri-read-cached (-> Url String))
@@ -319,10 +328,18 @@
            (format "+~a" prog-uri))])
     (format "~a/~a (~a)" prog-name prog-version user)))
 
+(: header-get (-> (Listof Bytes) Bytes (Option Bytes)))
+(define (header-get headers name)
+  (match (filter-map (curry extract-field name) headers)
+    [(list val) val]
+    [_           #f]))
+
 (: uri-download (-> Url Void))
 (define (uri-download u)
-  (define cache-file-path (url->cache-file-path u))
-  (log-debug "uri-download ~v into ~v" u cache-file-path)
+  (define cached-object-path (url->cache-object-path u))
+  (define cached-etag-path (url->cache-etag-path u))
+  (define cached-lmod-path (url->cache-lmod-path u))
+  (log-debug "uri-download ~v into ~v" u cached-object-path)
   (match* ((url-scheme u) (url-host u) (url-port u))
     [(s h p)
      #:when (and s h)
@@ -334,21 +351,38 @@
          (url->string (struct-copy url u [scheme #f] [host #f]))
          #:ssl? ssl?
          #:port (cond [p p] [ssl? 443] [else 80])
-         #:headers (list (format "User-Agent: ~a" user-agent))
-         ))
+         #:headers (list (format "User-Agent: ~a" user-agent))))
      (log-debug "headers: ~v" headers)
      (log-debug "status-line: ~v" status-line)
      (define status
        (string->number (second (string-split (bytes->string/utf-8 status-line)))))
      (log-debug "status: ~v" status)
      ; TODO Handle redirects
-     (if (= 200 status)
-         (begin
-           (make-parent-directory* cache-file-path)
-           (call-with-output-file cache-file-path
-                                  (curry copy-port body-input)
-                                  #:exists 'replace))
-         (raise status))]
+     (match status
+       [200
+         (let ([etag (header-get headers #"ETag")]
+               [lmod (header-get headers #"Last-Modified")])
+           (if (and etag
+                    (file-exists? cached-etag-path)
+                    (bytes=? etag (file->bytes cached-etag-path)))
+               (log-info "ETags match, skipping the rest of ~v" (url->string u))
+               (begin
+                 (log-info
+                   "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
+                   (url->string u) etag lmod)
+                 (make-parent-directory* cached-object-path)
+                 (make-parent-directory* cached-etag-path)
+                 (make-parent-directory* cached-lmod-path)
+                 (call-with-output-file cached-object-path
+                                        (curry copy-port body-input)
+                                        #:exists 'replace)
+                 (when etag
+                   (display-to-file etag cached-etag-path #:exists 'replace))
+                 (when lmod
+                   (display-to-file etag cached-lmod-path #:exists 'replace))))
+           (close-input-port body-input))]
+       [_
+         (raise status)])]
     [(_ _ _)
      (log-error "Invalid URI: ~v" u)]))
 

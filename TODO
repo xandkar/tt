@@ -11,6 +11,10 @@ Legend:
 In-progress
 -----------
 
+- [x] Prevent redundant downloads
+  - [x] Check ETag
+  - [ ] Check Last-Modified if no ETag was provided
+    - [ ] Parse rfc2822 timestamps
 - [-] Convert to Typed Racket
   - [x] build executable (otherwise too-slow)
   - [-] add signatures
@@ -100,7 +104,6 @@ Backlog
   We can mark which messages have already been printed and print new ones as
   they come in.
   REQUIRES: polling
-- [ ] Use ETag to prevent redundant downloads
 - [ ] Polling mode/command, where tt periodically polls peer timelines
 - [ ] nick tiebreaker(s)
   - [ ] some sort of a hash of URI?
