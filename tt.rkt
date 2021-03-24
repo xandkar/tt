@@ -4,10 +4,8 @@
 (require racket/date)
 (require
   net/head
-  net/http-client
   net/uri-codec
-  net/url-string
-  net/url-structs)
+  net/url)
 
 (require (prefix-in info: "info.rkt"))
 
@@ -340,51 +338,40 @@
   (define cached-etag-path (url->cache-etag-path u))
   (define cached-lmod-path (url->cache-lmod-path u))
   (log-debug "uri-download ~v into ~v" u cached-object-path)
-  (match* ((url-scheme u) (url-host u) (url-port u))
-    [(s h p)
-     #:when (and s h)
-     (define ssl? (string=? s "https"))
-     (define-values (status-line headers body-input)
-       ; TODO Timeout. Currently hangs on slow connections.
-       (http-sendrecv
-         h
-         (url->string (struct-copy url u [scheme #f] [host #f]))
-         #:ssl? ssl?
-         #:port (cond [p p] [ssl? 443] [else 80])
-         #:headers (list (format "User-Agent: ~a" user-agent))))
-     (log-debug "headers: ~v" headers)
-     (log-debug "status-line: ~v" status-line)
-     (define status
-       (string->number (second (string-split (bytes->string/utf-8 status-line)))))
-     (log-debug "status: ~v" status)
-     ; TODO Handle redirects
-     (match status
-       [200
-         (let ([etag (header-get headers #"ETag")]
-               [lmod (header-get headers #"Last-Modified")])
-           (if (and etag
-                    (file-exists? cached-etag-path)
-                    (bytes=? etag (file->bytes cached-etag-path)))
-               (log-info "ETags match, skipping the rest of ~v" (url->string u))
-               (begin
-                 (log-info
-                   "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
-                   (url->string u) etag lmod)
-                 (make-parent-directory* cached-object-path)
-                 (make-parent-directory* cached-etag-path)
-                 (make-parent-directory* cached-lmod-path)
-                 (call-with-output-file cached-object-path
-                                        (curry copy-port body-input)
-                                        #:exists 'replace)
-                 (when etag
-                   (display-to-file etag cached-etag-path #:exists 'replace))
-                 (when lmod
-                   (display-to-file etag cached-lmod-path #:exists 'replace))))
-           (close-input-port body-input))]
-       [_
-         (raise status)])]
-    [(_ _ _)
-     (log-error "Invalid URI: ~v" u)]))
+  (define-values (status-line headers body-input)
+    ; TODO Timeout. Currently hangs on slow connections.
+    (http-sendrecv/url u #:headers (list (format "User-Agent: ~a" user-agent))))
+  (log-debug "headers: ~v" headers)
+  (log-debug "status-line: ~v" status-line)
+  (define status
+    (string->number (second (string-split (bytes->string/utf-8 status-line)))))
+  (log-debug "status: ~v" status)
+  ; TODO Handle redirects
+  (match status
+    [200
+      (let ([etag (header-get headers #"ETag")]
+            [lmod (header-get headers #"Last-Modified")])
+        (if (and etag
+                 (file-exists? cached-etag-path)
+                 (bytes=? etag (file->bytes cached-etag-path)))
+            (log-info "ETags match, skipping the rest of ~v" (url->string u))
+            (begin
+              (log-info
+                "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
+                (url->string u) etag lmod)
+              (make-parent-directory* cached-object-path)
+              (make-parent-directory* cached-etag-path)
+              (make-parent-directory* cached-lmod-path)
+              (call-with-output-file cached-object-path
+                                     (curry copy-port body-input)
+                                     #:exists 'replace)
+              (when etag
+                (display-to-file etag cached-etag-path #:exists 'replace))
+              (when lmod
+                (display-to-file etag cached-lmod-path #:exists 'replace))))
+        (close-input-port body-input))]
+    [_
+      (raise status)]))
 
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
