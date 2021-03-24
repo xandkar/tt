@@ -573,5 +573,9 @@
               "Long output format"
               (set! out-format 'multi-line)]
              #:args file-paths
-             (timeline-print out-format (timeline-read order (paths->peers file-paths)))))])
+             (timeline-print out-format (timeline-read order (paths->peers file-paths)))))]
+        [command
+          (eprintf "Error: invalid command: ~v\n" command)
+          (eprintf "Please use the \"--help\" option to see a list of available commands.\n")
+          (exit 1)])
       (log-writer-stop log-writer))))
