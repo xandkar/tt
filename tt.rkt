@@ -523,7 +523,7 @@
       #:help-labels
       ""
       "and <command> is one of"
-      "r, read i   : Read the timeline."
+      "r, read     : Read the timeline."
       "d, download : Download the timeline."
       ; TODO Add path dynamically
       "u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload)."
