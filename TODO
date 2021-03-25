@@ -18,6 +18,8 @@ In-progress
     - [ ] inner
     - [ ] imports
 - [-] commands:
+  - [x] c | crawl
+    Discover new peers mentioned by known peers.
   - [x] r | read
     - see timeline ops above
   - [ ] w | write
@@ -48,9 +50,14 @@ In-progress
     - [x] mentions from timeline messages
       - [x] @<source.nick source.url>
       - [x] @<source.url>
-    - [x] "following" from timeline comments: # following = <nick> <uri>
+    - [ ] "following" from timeline comments: # following = <nick> <uri>
   - [ ] Parse User-Agent web access logs.
-  - [ ] Update peer ref file(s)
+  - [-] Update peer ref file(s)
+    - [x] peers-all
+    - [x] peers-mentioned
+    - [ ] peers-followed (by others, parsed from comments)
+    - [ ] peers-down (net errors)
+    - [ ] redirects?
     Rough sketch from late 2019:
         let read file =
             ...
@@ -93,6 +100,7 @@ In-progress
 
 Backlog
 -------
+- [ ] user-agent file as CLI option - need to run at least the crawler as another user
 - [ ] Support fetching rsync URIs
 - [ ] Check for peer duplicates:
   - [ ] same nick for N>1 URIs

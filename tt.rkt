@@ -279,6 +279,10 @@
         (log-warning "Cache file not found for URI: ~a" (url->string uri))
         "")))
 
+(: uri? (-> String Boolean))
+(define (uri? str)
+  (regexp-match? #rx"^[a-z]+://.*" (string-downcase str)))
+
 (: str->peer (String (Option Peer)))
 (define (str->peer str)
   (log-debug "Parsing peer string: ~v" str)
@@ -288,8 +292,8 @@
           (log-error "Invalid URI in string: ~v, exn: ~v" str e)
           #f)])
     (match (string-split str)
-      [(list u)   (Peer #f  (string->url u))]
-      [(list n u) (Peer  n  (string->url u))]
+      [(list u)   #:when (uri? u) (Peer #f  (string->url u))]
+      [(list n u) #:when (uri? u) (Peer  n  (string->url u))]
       [_
         (log-error "Invalid peer string: ~v" str)
         #f])))
@@ -303,12 +307,22 @@
 (define (str->peers str)
   (filter-map str->peer (filter-comments (str->lines str))))
 
+(: peers->file (-> (Listof Peers) Path-String Void))
+(define (peers->file peers path)
+  (display-lines-to-file
+    (map (match-lambda
+           [(Peer n u)
+            (format "~a~a" (if n (format "~a " n) "") (url->string u))])
+         peers)
+    path
+    #:exists 'replace))
+
 (: file->peers (-> Path-String (Listof Peer)))
 (define (file->peers file-path)
   (if (file-exists? file-path)
       (str->peers (file->string file-path))
       (begin
-        (log-error "File does not exist: ~v" (path->string file-path))
+        (log-warning "File does not exist: ~v" (path->string file-path))
         '())))
 
 (define re-rfc2822
@@ -462,14 +476,20 @@
   ; TODO No need for map - can just iter
   (void (concurrent-filter-map num-workers peer-download peers)))
 
-; TODO timeline contract : time-sorted list of messages
-(: timeline-read (-> Timeline-Order (Listof Peer) (Listof Msg)))
-(define (timeline-read order peers)
+(define (uniq xs)
+  (set->list (list->set xs)))
+
+(: peers->timeline (-> (listof Peer) (listof Msg)))
+(define (peers->timeline peers)
+  (append* (filter-map peer->msgs peers)))
+
+(: timeline-sort (-> (listof Msg) timeline-order (Listof Msgs)))
+(define (timeline-sort msgs order)
   (define cmp (match order
                 ['old->new <]
                 ['new->old >]))
-  (sort (append* (filter-map peer->msgs peers))
-        (λ (a b) (cmp (Msg-ts-epoch a) (Msg-ts-epoch b)))))
+  (sort msgs (λ (a b) (cmp (Msg-ts-epoch a)
+                           (Msg-ts-epoch b)))))
 
 (: paths->peers (-> (Listof String) (Listof Peer)))
 (define (paths->peers paths)
@@ -523,10 +543,11 @@
       #:help-labels
       ""
       "and <command> is one of"
-      "r, read     : Read the timeline."
+      "r, read     : Read the timeline (offline operation)."
       "d, download : Download the timeline."
       ; TODO Add path dynamically
       "u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload)."
+      "c, crawl    : Discover new peers mentioned by known peers (offline operation)."
       ""
       #:args (command . args)
       (define log-writer (log-writer-start log-level))
@@ -544,9 +565,12 @@
               njobs "Number of concurrent jobs."
               (set! num-workers (string->number njobs))]
              #:args file-paths
-             (define-values (_res _cpu real-ms _gc)
-               (time-apply timeline-download (list num-workers (paths->peers file-paths))))
-             (log-info "Timeline downloaded in ~a seconds." (/ real-ms 1000.0))))]
+             (let ([peers (paths->peers file-paths)])
+               (define-values (_res _cpu real-ms _gc)
+                 (time-apply timeline-download (list num-workers peers)))
+               (log-info "Downloaded timelines from ~a peers in ~a seconds."
+                         (length peers)
+                         (/ real-ms 1000.0)))))]
         [(or "u" "upload")
          (command-line
            #:program
@@ -573,7 +597,45 @@
               "Long output format"
               (set! out-format 'multi-line)]
              #:args file-paths
-             (timeline-print out-format (timeline-read order (paths->peers file-paths)))))]
+             (let* ([peers
+                      (paths->peers file-paths)]
+                    [timeline
+                      (timeline-sort (peers->timeline peers) order)])
+               (timeline-print out-format timeline))))]
+        [(or "c" "crawl")
+         (command-line
+           #:program
+           "tt crawl"
+           #:args file-paths
+           (let* ([peers-all-file
+                    (build-path tt-home-dir "peers-all")]
+                  [peers-mentioned-file
+                    (build-path tt-home-dir "peers-mentioned")]
+                  [peers
+                    (paths->peers
+                      (match file-paths
+                        ; TODO Refactor such that path->string not needed
+                        ['() (list (path->string peers-all-file))]
+                        [_   file-paths]))]
+                  [timeline
+                    (peers->timeline peers)]
+                  [peers-mentioned-curr
+                    (uniq (append* (map Msg-mentions timeline)))]
+                  [peers-mentioned-prev
+                    (file->peers peers-mentioned-file)]
+                  [peers-mentioned
+                    (uniq (append peers-mentioned-prev
+                                  peers-mentioned-curr))]
+                  [peers-all-prev
+                    (file->peers peers-all-file)]
+                  [peers-all
+                    (uniq (append peers
+                                  peers-mentioned
+                                  peers-all-prev))])
+             (peers->file peers-mentioned
+                          peers-mentioned-file)
+             (peers->file peers-all
+                          peers-all-file)))]
         [command
           (eprintf "Error: invalid command: ~v\n" command)
           (eprintf "Please use the \"--help\" option to see a list of available commands.\n")
