@@ -476,6 +476,7 @@
   ; TODO No need for map - can just iter
   (void (concurrent-filter-map num-workers peer-download peers)))
 
+(: uniq (∀ (α) (-> (Listof α) (Listof α))))
 (define (uniq xs)
   (set->list (list->set xs)))
 
@@ -505,7 +506,7 @@
                     (map string->path paths)])]
          [peers (append* (map file->peers paths))])
     (log-info "Read-in ~a peers." (length peers))
-    peers))
+    (uniq peers)))
 
 (: log-writer-stop (-> Thread Void))
 (define (log-writer-stop log-writer)

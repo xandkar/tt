@@ -154,6 +154,7 @@ Backlog
 
 Done
 ----
+- [x] Dedup read-in peers before using them.
 - [x] Prevent redundant downloads
   - [x] Check ETag
   - [x] Check Last-Modified if no ETag was provided
