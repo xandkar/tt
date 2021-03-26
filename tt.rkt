@@ -635,9 +635,15 @@
                   [peers-all-prev
                     (file->peers peers-all-file)]
                   [peers-all
-                    (peers-sort (uniq (append peers
-                                              peers-mentioned
-                                              peers-all-prev)))])
+                    (list->set (append peers
+                                       peers-mentioned
+                                       peers-all-prev))]
+                  [n-peers-discovered
+                    (set-count (set-subtract peers-all
+                                             (list->set peers-all-prev)))]
+                  [peers-all
+                    (peers-sort (set->list peers-all))])
+             (log-info "Discovered ~a new peers." n-peers-discovered)
              (peers->file peers-mentioned
                           peers-mentioned-file)
              (peers->file peers-all
