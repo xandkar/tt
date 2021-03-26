@@ -608,7 +608,12 @@
            #:program
            "tt crawl"
            #:args file-paths
-           (let* ([peers-all-file
+           (let* ([peers-sort
+                    (λ (peers) (sort peers (match-lambda**
+                                             [((Peer n1 _) (Peer n2 _))
+                                              (string<? (if n1 n1 "")
+                                                        (if n2 n2 ""))])))]
+                  [peers-all-file
                     (build-path tt-home-dir "peers-all")]
                   [peers-mentioned-file
                     (build-path tt-home-dir "peers-mentioned")]
@@ -625,14 +630,14 @@
                   [peers-mentioned-prev
                     (file->peers peers-mentioned-file)]
                   [peers-mentioned
-                    (uniq (append peers-mentioned-prev
-                                  peers-mentioned-curr))]
+                    (peers-sort (uniq (append peers-mentioned-prev
+                                              peers-mentioned-curr)))]
                   [peers-all-prev
                     (file->peers peers-all-file)]
                   [peers-all
-                    (uniq (append peers
-                                  peers-mentioned
-                                  peers-all-prev))])
+                    (peers-sort (uniq (append peers
+                                              peers-mentioned
+                                              peers-all-prev)))])
              (peers->file peers-mentioned
                           peers-mentioned-file)
              (peers->file peers-all
