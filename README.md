@@ -47,16 +47,18 @@ if omitted, you'll stay anonymous.
 
 ### usage
 Download feeds from the Internet:
-`tt d (FOLLOW-FILE)`
+`tt d [FOLLOW-FILE ... ]`
 
 Read your timeline:
-`tt r (FOLLOW-FILE)`
+`tt r [FOLLOW-FILE ... ]`
 
 `FOLLOW-FILE` contains lines with space-separated nick and twtxt.txt URI, like:
 
 ```
 xandkar https://xandkar.net/twtxt.txt
 ```
+
+If omitted, `FOLLOW-FILE` defaults to `~/.tt/peers`.
 
 See the rest of the usage options:
 `tt -h`
@@ -68,7 +70,7 @@ notes
 -----
 
 ### LWW downloads
-Downloaded timelines are stored in `~/.tt/cache/<SHA1_OF_URI>`, but no attempt
-is made to preserve the previously-downloaded messages - each download
-overrites the previous. One of the implications is that authors can edit/delete
-history without you noticing.
+Downloaded timelines are stored in `~/.tt/cache/objects/<URL_ENCODED_URL>`, but
+no attempt is made to preserve the previously-downloaded messages - each
+download overrites the previous. One of the implications is that authors can
+edit/delete history without you noticing.
