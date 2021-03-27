@@ -207,7 +207,7 @@
          [nick     "foo"]
          [uri      "bar"]
          [actual   (str->msg nick uri (string-append ts tab text))]
-         [expected (Msg 1605756129 ts nick uri text)])
+         [expected (Msg 1605756129 ts nick uri text '())])
     (check-equal?
       (Msg-ts-epoch actual)
       (Msg-ts-epoch expected)
