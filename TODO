@@ -10,7 +10,6 @@ Legend:
 
 In-progress
 -----------
-
 - [-] Convert to Typed Racket
   - [x] build executable (otherwise too-slow)
   - [-] add signatures
@@ -100,6 +99,21 @@ In-progress
 
 Backlog
 -------
+- [ ] Crawl all cache/objects/*, not given peers.
+  BUT, in order to build A-mentioned-B graph, we need to know the nick
+  associated with the URI whos object we're examining. How to do that?
+- [ ] Crawl downloaded web access logs
+- [ ] download-command hook to grab the access logs
+
+    (define (parse log-line)
+      (match (regexp-match #px"([^/]+)/([^ ]+) +\\(\\+([a-z]+://[^;]+); *@([^\\)]+)\\)" log-line)
+        [(list _ client version uri nick) (cons nick uri)]
+        [_ #f]))
+
+    (list->set (filter-map parse (file->lines "logs/combined-access.log")))
+
+    (filter (λ (p) (equal? 'file (file-or-directory-type p))) (directory-list logs-dir))
+
 - [ ] user-agent file as CLI option - need to run at least the crawler as another user
 - [ ] Support fetching rsync URIs
 - [ ] Check for peer duplicates:
