@@ -582,7 +582,9 @@
                (exit 1)))]
         [(or "r" "read")
          (let ([out-format 'multi-line]
-               [order      'old->new])
+               [order      'old->new]
+               [ts-min     #f]
+               [ts-max     #f])
            (command-line
              #:program
              "tt read"
@@ -590,6 +592,12 @@
              [("-r" "--rev")
               "Reverse displayed timeline order."
               (set! order 'new->old)]
+             [("-m" "--min")
+              m "Earliest time to display (ignore anything before it)."
+              (set! ts-min (rfc3339->epoch m))]
+             [("-x" "--max")
+              x "Latest time to display (ignore anything after it)."
+              (set! ts-max (rfc3339->epoch x))]
              #:once-any
              [("-s" "--short")
               "Short output format"
@@ -601,7 +609,15 @@
              (let* ([peers
                       (paths->peers file-paths)]
                     [timeline
-                      (timeline-sort (peers->timeline peers) order)])
+                      (timeline-sort (peers->timeline peers) order)]
+                    [timeline
+                      (filter (λ (m) (and (if ts-min (>= (Msg-ts-epoch m)
+                                                         ts-min)
+                                              #t)
+                                          (if ts-max (<= (Msg-ts-epoch m)
+                                                         ts-max)
+                                              #t)))
+                              timeline)])
                (timeline-print out-format timeline))))]
         [(or "c" "crawl")
          (command-line

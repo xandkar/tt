@@ -10,6 +10,13 @@ Legend:
 
 In-progress
 -----------
+- [-] timeline limits
+  - [x] by time range
+  - [ ] by msg count
+    - [ ] per peer
+    - [ ] total
+      Not necessary for short format, because we have Unix head/tail,
+      but may be convinient for long format (because msg spans multiple lines).
 - [-] Convert to Typed Racket
   - [x] build executable (otherwise too-slow)
   - [-] add signatures
@@ -99,6 +106,7 @@ In-progress
 
 Backlog
 -------
+- [ ] Support date without time in timestamps
 - [ ] Crawl all cache/objects/*, not given peers.
   BUT, in order to build A-mentioned-B graph, we need to know the nick
   associated with the URI whos object we're examining. How to do that?
@@ -136,10 +144,8 @@ Backlog
   - [ ] download times per peer
 - [ ] Support redirects
   - should permanent redirects update the peer ref somehow?
-- [ ] Support time ranges (i.e. reading the timeline between given time points)
 - [ ] optional text wrap
 - [ ] write
-- [ ] timeline limits
 - [ ] peer refs set operations (perhaps better done externally?)
 - [ ] timeline as a result of a query (peer ref set op + filter expressions)
 - [ ] config files
@@ -168,6 +174,7 @@ Backlog
 
 Done
 ----
+- [x] Support time ranges (i.e. reading the timeline between given time points)
 - [x] Dedup read-in peers before using them.
 - [x] Prevent redundant downloads
   - [x] Check ETag
