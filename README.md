@@ -46,11 +46,49 @@ reading their twtxts and perhaps read yours. This isn't strictly necessary and
 if omitted, you'll stay anonymous.
 
 ### usage
-Download feeds from the Internet:
-`tt d [FOLLOW-FILE ... ]`
 
-Read your timeline:
-`tt r [FOLLOW-FILE ... ]`
+		$ tt --help
+		tt [ <option> ... ] <command> [<args>] ...
+		 where <option> is one of
+			-d, --debug : Enable debug log level.
+
+		 and <command> is one of
+		 r, read     : Read the timeline (offline operation).
+		 d, download : Download the timeline.
+		 u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload).
+		 c, crawl    : Discover new peers mentioned by known peers (offline operation).
+
+			--help, -h : Show this help
+			-- : Do not treat any remaining argument as a switch (at this level)
+		 Multiple single-letter switches can be combined after one `-'; for
+			example: `-h-' is the same as `-h --'
+
+#### download
+peers' feeds from the Internet:
+
+		$ tt d -h
+		tt download [ <option> ... ] [<file-paths>] ...
+		 where <option> is one of
+			-j <njobs>, --jobs <njobs> : Number of concurrent jobs.
+			--help, -h : Show this help
+			-- : Do not treat any remaining argument as a switch (at this level)
+		 Multiple single-letter switches can be combined after one `-'; for
+			example: `-h-' is the same as `-h --'
+
+#### read
+your timeline:
+
+		$ tt r -h
+		tt read [ <option> ... ] [<file-paths>] ...
+		 where <option> is one of
+			-r, --rev : Reverse displayed timeline order.
+		/ -s, --short : Short output format
+		\ -l, --long : Long output format
+			--help, -h : Show this help
+			-- : Do not treat any remaining argument as a switch (at this level)
+		 /|\ Brackets indicate mutually exclusive options.
+		 Multiple single-letter switches can be combined after one `-'; for
+			example: `-h-' is the same as `-h --'
 
 `FOLLOW-FILE` contains lines with space-separated nick and twtxt.txt URI, like:
 
@@ -60,10 +98,9 @@ xandkar https://xandkar.net/twtxt.txt
 
 If omitted, `FOLLOW-FILE` defaults to `~/.tt/peers`.
 
-See the rest of the usage options:
-`tt -h`
+#### other commands
 
-`tt <command> -h`
+    tt <command> -h
 
 
 notes
