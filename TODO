@@ -57,6 +57,11 @@ In-progress
       - [x] @<source.nick source.url>
       - [x] @<source.url>
     - [ ] "following" from timeline comments: # following = <nick> <uri>
+      1. split file lines in 2 groups: comments and messages
+      2. dispatch messages parsing as usual
+      3. dispatch comments parsing for:
+        - # following = <nick> <uri>
+        - what else?
   - [ ] Parse User-Agent web access logs.
   - [-] Update peer ref file(s)
     - [x] peers-all
