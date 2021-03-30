@@ -107,9 +107,7 @@ In-progress
 Backlog
 -------
 - [ ] Support date without time in timestamps
-- [ ] Crawl all cache/objects/*, not given peers.
-  BUT, in order to build A-mentioned-B graph, we need to know the nick
-  associated with the URI whos object we're examining. How to do that?
+- [ ] Associate cached object with nick.
 - [ ] Crawl downloaded web access logs
 - [ ] download-command hook to grab the access logs
 
@@ -174,6 +172,7 @@ Backlog
 
 Done
 ----
+- [x] Crawl all cache/objects/*, not given peers.
 - [x] Support time ranges (i.e. reading the timeline between given time points)
 - [x] Dedup read-in peers before using them.
 - [x] Prevent redundant downloads

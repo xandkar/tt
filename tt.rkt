@@ -149,12 +149,13 @@
 (define str->msg
   (let ([re (pregexp "^([^\\s\t]+)[\\s\t]+(.*)$")])
     (λ (nick uri str)
+       (define str-head (substring str 0 (min 100 (string-length str))))
        (with-handlers*
          ([exn:fail?
             (λ (e)
                (log-error
                  "Failed to parse msg: ~v, from: ~v, at: ~v, because: ~v"
-                 str nick (url->string uri) e)
+                 str-head nick (url->string uri) e)
                #f)])
          (match (regexp-match re str)
            [(list _wholething ts-orig text)
@@ -170,10 +171,10 @@
                   (begin
                     (log-error
                       "Msg rejected due to invalid timestamp: ~v, nick:~v, uri:~v"
-                      str nick (url->string uri))
+                      str-head nick (url->string uri))
                     #f)))]
            [_
-             (log-debug "Non-msg line from nick:~v, line:~a" nick str)
+             (log-debug "Non-msg line from nick:~v, line:~a" nick str-head)
              #f])))))
 
 (module+ test
@@ -259,6 +260,10 @@
   (build-path cache-object-dir (uri-encode (url->string uri))))
 
 (define url->cache-object-path url->cache-file-path-v2)
+
+(: cache-object-filename->url (-> Path-String Url))
+(define (cache-object-filename->url name)
+  (string->url (uri-decode (path->string name))))
 
 (define (url->cache-etag-path uri)
   (build-path cache-dir "etags" (uri-encode (url->string uri))))
@@ -508,6 +513,32 @@
     (log-info "Read-in ~a peers." (length peers))
     (uniq peers)))
 
+(: mentioned-peers-in-cache (-> (Listof Peer)))
+(define (mentioned-peers-in-cache)
+  (define msgs
+    (append* (map (λ (filename)
+                     (define path (build-path cache-object-dir filename))
+                     (define size (/ (file-size path) 1000000.0))
+                     (log-info "BEGIN parsing ~a MB from file: ~v"
+                               size
+                               (path->string path))
+                     (define t0 (current-inexact-milliseconds))
+                     (define m (filter-map
+                                 (λ (line)
+                                    (str->msg #f (cache-object-filename->url filename) line))
+                                 (filter-comments
+                                   (file->lines path))))
+                     (define t1 (current-inexact-milliseconds))
+                     (log-info "END parsing ~a MB in ~a seconds from file: ~v."
+                               size
+                               (* 0.001 (- t1 t0))
+                               (path->string path))
+                     (when (empty? m)
+                       (log-warning "No messages found in ~a" (path->string path)))
+                     m)
+                  (directory-list cache-object-dir))))
+  (uniq (append* (map Msg-mentions msgs))))
+
 (: log-writer-stop (-> Thread Void))
 (define (log-writer-stop log-writer)
   (log-message (current-logger) 'fatal 'stop "Exiting." #f)
@@ -623,7 +654,7 @@
          (command-line
            #:program
            "tt crawl"
-           #:args file-paths
+           #:args ()
            (let* ([peers-sort
                     (λ (peers) (sort peers (match-lambda**
                                              [((Peer n1 _) (Peer n2 _))
@@ -633,16 +664,8 @@
                     (build-path tt-home-dir "peers-all")]
                   [peers-mentioned-file
                     (build-path tt-home-dir "peers-mentioned")]
-                  [peers
-                    (paths->peers
-                      (match file-paths
-                        ; TODO Refactor such that path->string not needed
-                        ['() (list (path->string peers-all-file))]
-                        [_   file-paths]))]
-                  [timeline
-                    (peers->timeline peers)]
                   [peers-mentioned-curr
-                    (uniq (append* (map Msg-mentions timeline)))]
+                    (mentioned-peers-in-cache)]
                   [peers-mentioned-prev
                     (file->peers peers-mentioned-file)]
                   [peers-mentioned
@@ -651,15 +674,20 @@
                   [peers-all-prev
                     (file->peers peers-all-file)]
                   [peers-all
-                    (list->set (append peers
-                                       peers-mentioned
+                    (list->set (append peers-mentioned
                                        peers-all-prev))]
-                  [n-peers-discovered
-                    (set-count (set-subtract peers-all
-                                             (list->set peers-all-prev)))]
+                  [peers-discovered
+                    (set-subtract peers-all (list->set peers-all-prev))]
                   [peers-all
                     (peers-sort (set->list peers-all))])
-             (log-info "Discovered ~a new peers." n-peers-discovered)
+             (log-info "Known peers mentioned: ~a" (length peers-mentioned))
+             (log-info "Known peers total: ~a" (length peers-all))
+             (log-info "Discovered ~a new peers:~n~a"
+                       (set-count peers-discovered)
+                       (pretty-format (map
+                                        (λ (p) (cons (Peer-nick p)
+                                                     (url->string (Peer-uri p))))
+                                        (set->list peers-discovered))))
              (peers->file peers-mentioned
                           peers-mentioned-file)
              (peers->file peers-all
