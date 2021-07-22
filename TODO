@@ -67,7 +67,9 @@ In-progress
     - [x] peers-all
     - [x] peers-mentioned
     - [ ] peers-followed (by others, parsed from comments)
+    - [ ] peers-up (no net errors)
     - [ ] peers-down (net errors)
+    - [ ] peers-valid (up and parsed at least 1 message)
     - [ ] redirects?
     Rough sketch from late 2019:
         let read file =
@@ -111,6 +113,17 @@ In-progress
 
 Backlog
 -------
+- [ ] Batch download jobs by domain:
+  - at most 1 worker per domain
+  - more than 1 domain per worker is OK
+- [ ] Remove mention link noise in read view.
+  in short view: just abbreviate @<nick uri> to @nick
+  in long view: abbreviate like above AND list the full versions after the text
+- [ ] Crawl only valid objects
+  REQUIRES: peers-valid ref file update
+- [ ] Reduce log noise
+- [ ] Parallelize crawling by file
+- [ ] Parallelize reading by file
 - [ ] Support date without time in timestamps
 - [ ] Associate cached object with nick.
 - [ ] Crawl downloaded web access logs

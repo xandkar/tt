@@ -36,6 +36,14 @@
          [uri  : Url])
         #:transparent)
 
+(struct Follower
+        ([nick    : (Option String)]
+         [uri     : Url]
+         [client  : String]
+         [version : String])
+        #:transparent)
+
+; TODO Normalize dir var naming
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
 
@@ -539,6 +547,64 @@
                   (directory-list cache-object-dir))))
   (uniq (append* (map Msg-mentions msgs))))
 
+(: follower->peer (-> Follower Peer))
+(define/match (follower->peer f)
+  [((Follower n u _ _)) (Peer n u)])
+
+(: weblog-line->follower (-> String (Option Peer)))
+(define weblog-line->follower
+  (let ([re #px"([^/]+)/([^ ]+) +\\(\\+([a-z]+://[^;]+); *@([^\\)]+)\\)"])
+    (λ (log-line)
+       (match (regexp-match re log-line)
+         [(list _ client version uri nick)
+          (let ([f (Follower nick (string->url uri) client version)])
+            (log-debug "Found follower: ~v" f)
+            f) ]
+         [_ #f]))))
+
+(define (weblog-file->peers file-path)
+  (define size (/ (file-size file-path) 1000000.0))
+  (log-info "BEGIN parsing ~a MB from file: ~v" size (path->string file-path))
+  (define t0 (current-inexact-milliseconds))
+  (define peers
+    (let* ([prefilter-cmd-path
+             (build-path tt-home-dir "hooks" "web-log-prefilter")]
+           [lines
+             (match (process* prefilter-cmd-path file-path)
+               [(list in _out pid err ctrl)
+                (ctrl 'wait)
+                (match (ctrl 'exit-code)
+                  [(or 0 1) ; Assuming grep's: 0: found, 1: not found, 2: error
+                    (port->lines in)]
+                  [_
+                    (log-warning "Prefilter hook failed: ~a" (port->string err))
+                    (file->lines file-path)])])])
+      (map follower->peer (filter-map weblog-line->follower lines))))
+  (define t1 (current-inexact-milliseconds))
+  (log-info "END parsing ~a MB in ~a seconds from file: ~v."
+            size
+            (* 0.001 (- t1 t0))
+            (path->string file-path))
+  (when (empty? peers)
+    (log-warning "No peers found in ~a" (path->string file-path)))
+  (uniq peers))
+
+(define (weblog-dir->peers dir-path)
+  (uniq (append*
+          (map weblog-file->peers
+               (filter-map
+                 (λ (filename)
+                    (define file-path (build-path dir-path filename))
+                    (if (equal? 'file (file-or-directory-type file-path))
+                        file-path
+                        #f))
+                 (if (directory-exists? dir-path)
+                     (directory-list dir-path)
+                     '()))))))
+
+(define (follower-peers-in-web-logs log-dirs)
+  (uniq (append* (map weblog-dir->peers log-dirs))))
+
 (: log-writer-stop (-> Thread Void))
 (define (log-writer-stop log-writer)
   (log-message (current-logger) 'fatal 'stop "Exiting." #f)
@@ -602,13 +668,21 @@
                  (time-apply timeline-download (list num-workers peers)))
                (log-info "Downloaded timelines from ~a peers in ~a seconds."
                          (length peers)
-                         (/ real-ms 1000.0)))))]
+                         (/ real-ms 1000.0)))
+             (let ([hook-path (build-path tt-home-dir "hooks" "download")])
+               (if (file-exists? hook-path)
+                   (if (member 'execute (file-or-directory-permissions hook-path))
+                       (if (system (path->string hook-path))
+                           (exit 0)
+                           (exit 1))
+                       (log-warning "Download hook found, but not executable."))
+                   (log-warning "Download hook not found.")))))]
         [(or "u" "upload")
          (command-line
            #:program
            "tt upload"
            #:args ()
-           (if (system (path->string (build-path tt-home-dir "upload")))
+           (if (system (path->string (build-path tt-home-dir "hooks" "upload")))
                (exit 0)
                (exit 1)))]
         [(or "r" "read")
@@ -654,40 +728,65 @@
          (command-line
            #:program
            "tt crawl"
-           #:args ()
+           #:args log-files-directories
            (let* ([peers-sort
                     (λ (peers) (sort peers (match-lambda**
                                              [((Peer n1 _) (Peer n2 _))
                                               (string<? (if n1 n1 "")
                                                         (if n2 n2 ""))])))]
+                  ; TODO Tidy-up redundant set conversions
                   [peers-all-file
                     (build-path tt-home-dir "peers-all")]
                   [peers-mentioned-file
                     (build-path tt-home-dir "peers-mentioned")]
+                  [peers-followers-file
+                    (build-path tt-home-dir "peers-followers")]
+                  [peers-followers-curr
+                    (follower-peers-in-web-logs
+                      (if (empty? log-files-directories)
+                          (list (build-path tt-home-dir "web-logs"))
+                          log-files-directories))]
                   [peers-mentioned-curr
                     (mentioned-peers-in-cache)]
                   [peers-mentioned-prev
                     (file->peers peers-mentioned-file)]
+                  [peers-followers-prev
+                    (file->peers peers-followers-file)]
                   [peers-mentioned
                     (peers-sort (uniq (append peers-mentioned-prev
                                               peers-mentioned-curr)))]
                   [peers-all-prev
                     (file->peers peers-all-file)]
+                  [peers-followers
+                    (list->set (append peers-followers-prev
+                                       peers-followers-curr))]
                   [peers-all
                     (list->set (append peers-mentioned
+                                       (set->list peers-followers)
                                        peers-all-prev))]
+                  [peers-discovered-followers
+                    (set-subtract (list->set peers-followers)
+                                  (list->set peers-followers-prev))]
                   [peers-discovered
                     (set-subtract peers-all (list->set peers-all-prev))]
                   [peers-all
                     (peers-sort (set->list peers-all))])
              (log-info "Known peers mentioned: ~a" (length peers-mentioned))
              (log-info "Known peers total: ~a" (length peers-all))
+             (log-info "Discovered ~a new followers:~n~a"
+                       (set-count peers-discovered-followers)
+                       (pretty-format (map
+                                        (λ (p) (cons (Peer-nick p)
+                                                     (url->string (Peer-uri p))))
+                                        (set->list peers-discovered-followers))))
              (log-info "Discovered ~a new peers:~n~a"
                        (set-count peers-discovered)
                        (pretty-format (map
                                         (λ (p) (cons (Peer-nick p)
                                                      (url->string (Peer-uri p))))
                                         (set->list peers-discovered))))
+             (peers->file (peers-sort (set->list peers-followers))
+                          peers-followers-file)
              (peers->file peers-mentioned
                           peers-mentioned-file)
              (peers->file peers-all
