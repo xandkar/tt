@@ -26,8 +26,7 @@
 (struct Msg
         ([ts-epoch   : Integer]
          [ts-orig    : String]
-         [nick       : (Option String)]
-         [uri        : Url]
+         [from       : Peer]
          [text       : String]
          [mentions   : (Listof Peer)]))
 
@@ -35,6 +34,10 @@
         ([nick : (Option String)]
          [uri  : Url])
         #:transparent)
+
+(define (peer->str p)
+  (match-define (Peer n u) p)
+  (format "~a <~a>" n (url->string u)))
 
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
@@ -90,8 +93,8 @@
          [n      (vector-length colors)])
     (λ (out-format color-i msg)
        (let ([color (vector-ref colors (modulo color-i n))]
-             [nick  (Msg-nick msg)]
-             [uri   (url->string (Msg-uri msg))]
+             [nick  (Peer-nick (Msg-from msg))]
+             [uri   (url->string (Peer-uri (Msg-from msg)))]
              [text  (Msg-text msg)]
              [mentions (Msg-mentions msg)])
          (match out-format
@@ -166,7 +169,7 @@
                                      [(list _wholething nick-uri)
                                       (str->peer nick-uri)]))
                             (regexp-match* #px"@<[^\\s]+([\\s]+)?[^>]+>" text))])
-                    (Msg ts-epoch ts-orig nick uri text mentions))
+                    (Msg ts-epoch ts-orig (Peer nick uri) text mentions))
                   (begin
                     (log-error
                       "Msg rejected due to invalid timestamp: ~v, nick:~v, uri:~v"
@@ -195,8 +198,8 @@
                                     z)]
                  [m  (str->msg n u (string-append ts sep txt))])
             (check-not-false m)
-            (check-equal? (Msg-nick m) n)
-            (check-equal? (Msg-uri m) u)
+            (check-equal? (Peer-nick (Msg-from m)) n)
+            (check-equal? (Peer-uri  (Msg-from m)) u)
             (check-equal? (Msg-text m) txt)
             (check-equal? (Msg-ts-orig m) ts (format "Given: ~v" ts))
             )))
@@ -207,7 +210,7 @@
          [nick     "foo"]
          [uri      "bar"]
          [actual   (str->msg nick uri (string-append ts tab text))]
-         [expected (Msg 1605756129 ts nick uri text '())])
+         [expected (Msg 1605756129 ts (Peer nick uri) text '())])
     (check-equal?
       (Msg-ts-epoch actual)
       (Msg-ts-epoch expected)
@@ -217,12 +220,12 @@
       (Msg-ts-orig expected)
       "str->msg ts-orig")
     (check-equal?
-      (Msg-nick actual)
-      (Msg-nick expected)
+      (Peer-nick (Msg-from actual))
+      (Peer-nick (Msg-from expected))
       "str->msg nick")
     (check-equal?
-      (Msg-uri actual)
-      (Msg-uri expected)
+      (Peer-uri (Msg-from actual))
+      (Peer-uri (Msg-from expected))
       "str->msg uri")
     (check-equal?
       (Msg-text actual)
@@ -440,7 +443,7 @@
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
   (void (foldl (match-lambda**
-                 [((and m (Msg _ _ nick _ _ _)) (cons prev-nick i))
+                 [((and m (Msg _ _ (Peer nick _) _ _)) (cons prev-nick i))
                   (let ([i (if (equal? prev-nick nick) i (+ 1 i))])
                     (msg-print out-format i m)
                     (cons nick i))])
@@ -664,6 +667,29 @@
                           peers-mentioned-file)
              (peers->file peers-all
                           peers-all-file)))]
+        [(or "g" "graph")
+         (command-line
+           #:program
+           "tt graph"
+           #:args file-paths
+           (let* ([peers
+                    (paths->peers file-paths)]
+                  [timeline
+                    (peers->timeline peers)])
+             (displayln "digraph {")
+             (for-each
+               (match-lambda
+                 [(Msg _ _ from-peer _ to-peers)
+                  (for-each
+                    (λ (to-peer)
+                       (printf "~s -> ~s~n"
+                               (Peer-nick from-peer)
+                               (Peer-nick to-peer)))
+                    to-peers)
+                  ])
+               timeline)
+             (displayln "}")
+             ))]
         [command
           (eprintf "Error: invalid command: ~v\n" command)
           (eprintf "Please use the \"--help\" option to see a list of available commands.\n")
