@@ -153,7 +153,7 @@
                                      local-time?)])
             (+ ts-epoch tz-offset))]
          [_
-           (log-error "Invalid timestamp: ~v" ts)
+           (log-debug "Invalid timestamp: ~v" ts)
            #f]))))
 
 (: str->msg (-> (Option String) Url String (Option Msg)))
@@ -164,7 +164,7 @@
        (with-handlers*
          ([exn:fail?
             (λ (e)
-               (log-error
+               (log-debug
                  "Failed to parse msg: ~v, from: ~v, at: ~v, because: ~v"
                  str-head nick (url->string uri) e)
                #f)])
@@ -180,7 +180,7 @@
                             (regexp-match* #px"@<[^\\s]+([\\s]+)?[^>]+>" text))])
                     (Msg ts-epoch ts-orig nick uri text mentions))
                   (begin
-                    (log-error
+                    (log-debug
                       "Msg rejected due to invalid timestamp: ~v, nick:~v, uri:~v"
                       str-head nick (url->string uri))
                     #f)))]
@@ -291,7 +291,7 @@
   (if (file-exists? path-v2)
       (file->string path-v2)
       (begin
-        (log-warning "Cache file not found for URI: ~a" (url->string uri))
+        (log-debug "Cache file not found for URI: ~a" (url->string uri))
         #f)))
 
 (: str->url (-> String (Option String)))
@@ -319,7 +319,7 @@
          #f]
        [url (Peer nick url comment)])]
     [_
-      (log-error "Invalid peer string: ~v" str)
+      (log-debug "Invalid peer string: ~v" str)
       #f]))
 
 (module+ test
@@ -564,7 +564,7 @@
 (: peer->msgs (-> Peer (Listof Msg)))
 (define (peer->msgs peer)
   (match-define (Peer nick uri _) peer)
-  (log-info "Reading peer nick:~v uri:~v" nick (url->string uri))
+  (log-debug "Reading peer nick:~v uri:~v" nick (url->string uri))
   (define msgs-data (uri-read-cached uri))
   (if msgs-data
       (str->msgs nick uri msgs-data)
@@ -646,7 +646,7 @@
     (append* (map (λ (filename)
                      (define path (build-path cache-object-dir filename))
                      (define size (/ (file-size path) 1000000.0))
-                     (log-info "BEGIN parsing ~a MB from file: ~v"
+                     (log-debug "BEGIN parsing ~a MB from file: ~v"
                                size
                                (path->string path))
                      (define t0 (current-inexact-milliseconds))
@@ -656,12 +656,12 @@
                                  (filter-comments
                                    (file->lines path))))
                      (define t1 (current-inexact-milliseconds))
-                     (log-info "END parsing ~a MB in ~a seconds from file: ~v."
+                     (log-debug "END parsing ~a MB in ~a seconds from file: ~v."
                                size
                                (* 0.001 (- t1 t0))
                                (path->string path))
                      (when (empty? m)
-                       (log-warning "No messages found in ~a" (path->string path)))
+                       (log-debug "No messages found in ~a" (path->string path)))
                      m)
                   (directory-list cache-object-dir))))
   (uniq (append* (map Msg-mentions msgs))))
