@@ -591,15 +591,19 @@
     (concurrent-filter-map num-workers
                            (λ (p) (cons p (peer-download timeout p)))
                            peers))
-  (define ok? (match-lambda
-                [(cons _ (cons 'ok _)) #t]
-                [(cons _ (cons 'error _)) #f]))
-  (define (err? r) (not (ok? r)))
-  (define peers-ok (map car (filter ok? results)))
-  (define peers-err (map car (filter err? results)))
+  (define peers-ok
+    (filter-map (match-lambda
+                  [(cons p (cons 'ok _)) p]
+                  [(cons _ (cons 'error e)) #f])
+                results))
+  (define peers-err
+    (filter-map (match-lambda
+                  [(cons _ (cons 'ok _))
+                   #f]
+                  [(cons p (cons 'error e))
+                   (struct-copy Peer p [comment (format "~s" e)])])
+                results))
   (peers->file peers-ok (build-path tt-home-dir "peers-last-downloaded-ok"))
-  ; TODO Append error as a comment: <nick> <uri> # <error>
-  ; TODO Support inline/trailing comments in peer files
   (peers->file peers-err (build-path tt-home-dir "peers-last-downloaded-err")))
 
 (: uniq (∀ (α) (-> (Listof α) (Listof α))))
