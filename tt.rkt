@@ -566,6 +566,7 @@
   (match-define (Peer nick uri _) peer)
   (log-debug "Reading peer nick:~v uri:~v" nick (url->string uri))
   (define msgs-data (uri-read-cached uri))
+  ; TODO Expire cache
   (if msgs-data
       (str->msgs nick uri msgs-data)
       '()))
@@ -642,6 +643,7 @@
 
 (: mentioned-peers-in-cache (-> (Listof Peer)))
 (define (mentioned-peers-in-cache)
+  ; TODO Expire cache
   (define msgs
     (append* (map (λ (filename)
                      (define path (build-path cache-object-dir filename))
