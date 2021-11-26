@@ -36,8 +36,9 @@
          [mentions   : (Listof Peer)]))
 
 (struct Peer
-        ([nick : (Option String)]
-         [uri  : Url])
+        ([nick    : (Option String)]
+         [uri     : Url]
+         [comment : (Option String)])
         #:transparent)
 
 (struct Resp
@@ -294,25 +295,62 @@
         (log-warning "Cache file not found for URI: ~a" (url->string uri))
         "")))
 
-(: uri? (-> String Boolean))
-(define (uri? str)
-  (regexp-match? #rx"^[a-z]+://.*" (string-downcase str)))
+(: str->url (-> String (Option String)))
+(define (str->url s)
+  (with-handlers*
+    ([exn:fail? (λ (e) #f)])
+    (string->url s)))
 
 (: str->peer (String (Option Peer)))
 (define (str->peer str)
   (log-debug "Parsing peer string: ~v" str)
-  (with-handlers*
-    ([exn:fail?
-       (λ (e)
-          (log-error "Invalid URI in string: ~v, exn: ~v" str e)
-          #f)])
-    (match (string-split str)
-      [(list u)   #:when (uri? u) (Peer #f  (string->url u))]
-      [(list n u) #:when (uri? u) (Peer  n  (string->url u))]
-      [_
-        (log-error "Invalid peer string: ~v" str)
-        #f])))
+  (match
+    (regexp-match
+      #px"(([^\\s\t]+)[\\s\t]+)?([a-zA-Z]+://[^\\s\t]*)[\\s\t]*(#\\s*(.*))?"
+      str)
+    [(list _wholething
+           _nick-with-space
+           nick
+           url
+           _comment-with-hash
+           comment)
+     (match (str->url url)
+       [#f
+         (log-error "Invalid URI in peer string: ~v" str)
+         #f]
+       [url (Peer nick url comment)])]
+    [_
+      (log-error "Invalid peer string: ~v" str)
+      #f]))
 
+(module+ test
+  (check-equal?
+    (str->peer "foo http://bar/file.txt # some rando")
+    (Peer "foo" (str->url "http://bar/file.txt") "some rando"))
+  (check-equal?
+    (str->peer "http://bar/file.txt # some rando")
+    (Peer #f (str->url "http://bar/file.txt") "some rando"))
+  (check-equal?
+    (str->peer "http://bar/file.txt #")
+    (Peer #f (str->url "http://bar/file.txt") ""))
+  (check-equal?
+    (str->peer "http://bar/file.txt#") ; XXX URLs can have #s
+    (Peer #f (str->url "http://bar/file.txt#") #f))
+  (check-equal?
+    (str->peer "http://bar/file.txt")
+    (Peer #f (str->url "http://bar/file.txt") #f))
+  (check-equal?
+    (str->peer "foo http://bar/file.txt")
+    (Peer "foo" (str->url "http://bar/file.txt") #f))
+  (check-equal?
+    (str->peer "foo bar # baz")
+    #f)
+  (check-equal?
+    (str->peer "foo bar://baz # quux")
+    (Peer "foo" (str->url "bar://baz") "quux"))
+  (check-equal?
+    (str->peer "foo bar//baz # quux")
+    #f))
 
 (: filter-comments (-> (Listof String) (Listof String)))
 (define (filter-comments lines)
@@ -326,8 +364,11 @@
 (define (peers->file peers path)
   (display-lines-to-file
     (map (match-lambda
-           [(Peer n u)
-            (format "~a~a" (if n (format "~a " n) "") (url->string u))])
+           [(Peer n u c)
+            (format "~a~a~a"
+                    (if n (format "~a " n) "")
+                    (url->string u)
+                    (if c (format " # ~a" c) ""))])
          peers)
     path
     #:exists 'replace))
@@ -387,8 +428,8 @@
      [user
        (if (file-exists? user-peer-file)
            (match (first (file->peers user-peer-file))
-             [(Peer #f u) (format "+~a"      (url->string u)  )]
-             [(Peer  n u) (format "+~a; @~a" (url->string u) n)])
+             [(Peer #f u _) (format "+~a"      (url->string u)  )]
+             [(Peer  n u _) (format "+~a; @~a" (url->string u) n)])
            (format "+~a" prog-uri))])
     (format "~a/~a (~a)" prog-name prog-version user)))
 
@@ -522,8 +563,8 @@
                timeline)))
 
 (: peer->msgs (-> Peer (Listof Msg)))
-(define (peer->msgs f)
-  (match-define (Peer nick uri) f)
+(define (peer->msgs peer)
+  (match-define (Peer nick uri _) peer)
   (log-info "Reading peer nick:~v uri:~v" nick (url->string uri))
   (str->msgs nick uri (uri-read-cached uri)))
 
@@ -532,7 +573,7 @@
        (Result (U 'skipped-cached 'downloaded-new)
                Any)))
 (define (peer-download timeout peer)
-  (match-define (Peer nick uri) peer)
+  (match-define (Peer nick uri _) peer)
   (define u (url->string uri))
   (log-info "Download BEGIN URL:~a" u)
   (define-values (results _tm-cpu-ms tm-real-ms _tm-gc-ms)
@@ -741,7 +782,7 @@
            #:args ()
            (let* ([peers-sort
                     (λ (peers) (sort peers (match-lambda**
-                                             [((Peer n1 _) (Peer n2 _))
+                                             [((Peer n1 _ _) (Peer n2 _ _))
                                               (string<? (if n1 n1 "")
                                                         (if n2 n2 ""))])))]
                   [peers-all-file
