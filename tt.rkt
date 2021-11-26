@@ -795,6 +795,8 @@
                     (build-path tt-home-dir "peers-all")]
                   [peers-mentioned-file
                     (build-path tt-home-dir "peers-mentioned")]
+                  [peers-parsed-file
+                    (build-path tt-home-dir "peers-parsed")]
                   [peers-mentioned-curr
                     (mentioned-peers-in-cache)]
                   [peers-mentioned-prev
@@ -810,8 +812,13 @@
                   [peers-discovered
                     (set-subtract peers-all (list->set peers-all-prev))]
                   [peers-all
-                    (peers-sort (set->list peers-all))])
+                    (peers-sort (set->list peers-all))]
+                  [peers-parsed
+                    (filter
+                      (λ (p) (< 0 (length (peer->msgs p))))
+                      peers-all)])
              (log-info "Known peers mentioned: ~a" (length peers-mentioned))
+             (log-info "Known peers parsed ~a" (length peers-parsed))
              (log-info "Known peers total: ~a" (length peers-all))
              (log-info "Discovered ~a new peers:~n~a"
                        (set-count peers-discovered)
@@ -821,6 +828,8 @@
                                         (set->list peers-discovered))))
              (peers->file peers-mentioned
                           peers-mentioned-file)
+             (peers->file peers-parsed
+                          peers-parsed-file)
              (peers->file peers-all
                           peers-all-file)))]
         [command
