@@ -705,7 +705,7 @@
       "r, read     : Read the timeline (offline operation)."
       "d, download : Download the timeline."
       ; TODO Add path dynamically
-      "u, upload   : Upload your twtxt file (alias to execute ~/.tt/upload)."
+      "u, upload   : Upload your twtxt file (alias to execute ~/.tt/hooks/upload)."
       "c, crawl    : Discover new peers mentioned by known peers (offline operation)."
       ""
       #:args (command . args)
@@ -739,7 +739,7 @@
            #:program
            "tt upload"
            #:args ()
-           (if (system (path->string (build-path tt-home-dir "upload")))
+           (if (system (path->string (build-path tt-home-dir "hooks" "upload")))
                (exit 0)
                (exit 1)))]
         [(or "r" "read")
