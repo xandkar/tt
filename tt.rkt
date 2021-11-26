@@ -282,8 +282,7 @@
 (define (url->cache-lmod-path uri)
   (build-path cache-dir "lmods" (uri-encode (url->string uri))))
 
-; TODO Return Option
-(: uri-read-cached (-> Url String))
+(: uri-read-cached (-> Url (Option String)))
 (define (uri-read-cached uri)
   (define path-v1 (url->cache-file-path-v1 uri))
   (define path-v2 (url->cache-file-path-v2 uri))
@@ -293,7 +292,7 @@
       (file->string path-v2)
       (begin
         (log-warning "Cache file not found for URI: ~a" (url->string uri))
-        "")))
+        #f)))
 
 (: str->url (-> String (Option String)))
 (define (str->url s)
@@ -566,7 +565,10 @@
 (define (peer->msgs peer)
   (match-define (Peer nick uri _) peer)
   (log-info "Reading peer nick:~v uri:~v" nick (url->string uri))
-  (str->msgs nick uri (uri-read-cached uri)))
+  (define msgs-data (uri-read-cached uri))
+  (if msgs-data
+      (str->msgs nick uri msgs-data)
+      '()))
 
 (: peer-download
    (-> Positive-Float Peer
