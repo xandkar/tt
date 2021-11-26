@@ -23,6 +23,10 @@
   (U 'old->new
      'new->old))
 
+(define-type Result
+  (∀ (α β) (U (cons 'ok α)
+              (cons 'error β))))
+
 (struct Msg
         ([ts-epoch   : Integer]
          [ts-orig    : String]
@@ -39,7 +43,8 @@
 (struct Resp
         ([status-line : String]
          [headers     : (Listof Bytes)]
-         [body-input  : Input-Port]))
+         [body-input  : Input-Port])
+        #:transparent)
 
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
@@ -393,13 +398,59 @@
     [(list val) val]
     [_           #f]))
 
-(: uri-download (-> Positive-Float Url Void))
-(define (uri-download timeout u)
+(: uri-download-from-port
+   (-> Url (Listof (U Bytes String)) Input-Port
+       (U 'skipped-cached 'downloaded-new))) ; TODO 'ok|'error ?
+(define (uri-download-from-port u headers body-input)
+  (define u-str (url->string u))
+  (log-debug "uri-download-from-port ~v into ~v" u-str cached-object-path)
   (define cached-object-path (url->cache-object-path u))
   (define cached-etag-path (url->cache-etag-path u))
   (define cached-lmod-path (url->cache-lmod-path u))
+  (define etag      (header-get headers #"ETag"))
+  (define lmod      (header-get headers #"Last-Modified"))
+  (define lmod-curr (if lmod (rfc2822->epoch lmod) #f))
+  (define lmod-prev (if (file-exists? cached-lmod-path)
+                        (rfc2822->epoch (file->bytes cached-lmod-path))
+                        #f))
+  (log-debug "lmod-curr:~v lmod-prev:~v" lmod-curr lmod-prev)
+  (define cached?
+    (or (and etag
+             (file-exists? cached-etag-path)
+             (bytes=? etag (file->bytes cached-etag-path))
+             (begin
+               (log-debug "ETags match, skipping the rest of ~v" u-str)
+               #t))
+        (and lmod-curr
+             lmod-prev
+             (<= lmod-curr lmod-prev)
+             (begin
+               (log-debug "Last-Modified <= current skipping the rest of ~v" u-str)
+               #t))))
+  (if (not cached?)
+    (begin
+      (log-debug
+        "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
+        u-str etag lmod)
+      (make-parent-directory* cached-object-path)
+      (make-parent-directory* cached-etag-path)
+      (make-parent-directory* cached-lmod-path)
+      (call-with-output-file cached-object-path
+                             (curry copy-port body-input)
+                             #:exists 'replace)
+      (when etag
+        (display-to-file etag cached-etag-path #:exists 'replace))
+      (when lmod
+        (display-to-file lmod cached-lmod-path #:exists 'replace))
+      'downloaded-new)
+    'skipped-cached))
+
+(: uri-download
+   (-> Positive-Float Url
+       (Result (U 'skipped-cached 'downloaded-new)
+               Any))) ; TODO Maybe more-precise error type?
+(define (uri-download timeout u)
   (define u-str (url->string u))
-  (log-debug "uri-download ~v into ~v" u-str cached-object-path)
   (define timeout-chan (make-channel))
   (define result-chan (make-channel))
   (define timeout-thread
@@ -407,7 +458,7 @@
                ; Doing this instead of sync/timeout to distinguish error values,
                ; rather than just have #f to work with.
                (sleep timeout)
-               (channel-put timeout-chan (cons 'error 'timeout)))))
+               (channel-put timeout-chan '(error . timeout)))))
   (define result-thread
     (thread (λ ()
                ; XXX We timeout getting a response, but body download could
@@ -425,12 +476,16 @@
                ;   and read-from disk as a whole.
                (define result
                  (with-handlers
-                   ([exn:fail? (λ (e) (cons 'error (cons 'net-error e)))])
+                   ; TODO Maybe name each known errno? (exn:fail:network:errno-errno e)
+                   ([exn:fail:network?
+                      (λ (e) `(error . (net-error . ,e)))]
+                    [exn?
+                      (λ (e) `(error . (other . ,e)))])
                    (define-values (status-line headers body-input)
                      (http-sendrecv/url
                        u
                        #:headers (list (format "User-Agent: ~a" user-agent))))
-                   (cons 'ok (Resp status-line headers body-input))))
+                   `(ok . ,(Resp status-line headers body-input))))
                (channel-put result-chan result))))
   (define result
     (sync timeout-chan
@@ -438,55 +493,23 @@
   (kill-thread result-thread)
   (kill-thread timeout-thread)
   (match result
-    [(cons 'error 'timeout)
-     (log-error "Download failed: timeout. URL:~v" u-str)]
-    [(cons 'error (cons 'net-error e))
-     (log-error "Download failed. Network error. URL:~v  EXN:~v" u-str e)]
+    [(cons 'error _)
+     result]
     [(cons 'ok (Resp status-line headers body-input))
      (log-debug "headers: ~v" headers)
      (log-debug "status-line: ~v" status-line)
      (define status
        (string->number (second (string-split (bytes->string/utf-8 status-line)))))
      (log-debug "status: ~v" status)
-     ; TODO Handle redirects
-     (match status
-       [200
-         (let* ([etag      (header-get headers #"ETag")]
-                [lmod      (header-get headers #"Last-Modified")]
-                [lmod-curr (if lmod (rfc2822->epoch lmod) #f)]
-                [lmod-prev (if (file-exists? cached-lmod-path)
-                               (rfc2822->epoch (file->bytes cached-lmod-path))
-                               #f)])
-           (log-debug "lmod-curr:~v lmod-prev:~v" lmod-curr lmod-prev)
-           (unless (or (and etag
-                            (file-exists? cached-etag-path)
-                            (bytes=? etag (file->bytes cached-etag-path))
-                            (begin
-                              (log-info "ETags match, skipping the rest of ~v" u-str)
-                              #t))
-                       (and lmod-curr
-                            lmod-prev
-                            (<= lmod-curr lmod-prev)
-                            (begin
-                              (log-info "Last-Modified <= current skipping the rest of ~v" u-str)
-                              #t)))
-             (begin
-               (log-info
-                 "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
-                 u-str etag lmod)
-               (make-parent-directory* cached-object-path)
-               (make-parent-directory* cached-etag-path)
-               (make-parent-directory* cached-lmod-path)
-               (call-with-output-file cached-object-path
-                                      (curry copy-port body-input)
-                                      #:exists 'replace)
-               (when etag
-                 (display-to-file etag cached-etag-path #:exists 'replace))
-               (when lmod
-                 (display-to-file lmod cached-lmod-path #:exists 'replace)))))]
-       [_
-         (log-error "HTTP error URL:~a  status:~a" u-str status)])
-     (close-input-port body-input)]))
+     ; TODO Handle redirects. Should be within same timeout as req and body.
+     (let ([result
+             (match status
+               [200
+                 `(ok . ,(uri-download-from-port u headers body-input))]
+               [_
+                 `(error . (http . ,status))])])
+       (close-input-port body-input)
+       result)]))
 
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
@@ -504,19 +527,39 @@
   (log-info "Reading peer nick:~v uri:~v" nick (url->string uri))
   (str->msgs nick uri (uri-read-cached uri)))
 
-(: peer-download (-> Positive-Float Peer Void))
+(: peer-download
+   (-> Positive-Float Peer
+       (Result (U 'skipped-cached 'downloaded-new)
+               Any)))
 (define (peer-download timeout peer)
   (match-define (Peer nick uri) peer)
   (define u (url->string uri))
-  (log-info "Download BEGIN uri:~a" u)
-  (define-values (_result _tm-cpu-ms tm-real-ms _tm-gc-ms)
+  (log-info "Download BEGIN URL:~a" u)
+  (define-values (results _tm-cpu-ms tm-real-ms _tm-gc-ms)
     (time-apply uri-download (list timeout uri)))
-  (log-info "Download END in ~a seconds, uri: ~a" (/ tm-real-ms 1000.0) u))
+  (define result (car results))
+  (log-info "Download END in ~a seconds, URL:~a, result:~s"
+            (/ tm-real-ms 1000.0)
+            u
+            result)
+  result)
 
 (: timeline-download (-> Integer Positive-Float (Listof Peer) Void))
 (define (timeline-download num-workers timeout peers)
-  ; TODO No need for map - can just iter
-  (void (concurrent-filter-map num-workers (λ (p) (peer-download timeout p)) peers)))
+  (define results
+    (concurrent-filter-map num-workers
+                           (λ (p) (cons p (peer-download timeout p)))
+                           peers))
+  (define ok? (match-lambda
+                [(cons _ (cons 'ok _)) #t]
+                [(cons _ (cons 'error _)) #f]))
+  (define (err? r) (not (ok? r)))
+  (define peers-ok (map car (filter ok? results)))
+  (define peers-err (map car (filter err? results)))
+  (peers->file peers-ok (build-path tt-home-dir "peers-last-downloaded-ok"))
+  ; TODO Append error as a comment: <nick> <uri> # <error>
+  ; TODO Support inline/trailing comments in peer files
+  (peers->file peers-err (build-path tt-home-dir "peers-last-downloaded-err")))
 
 (: uniq (∀ (α) (-> (Listof α) (Listof α))))
 (define (uniq xs)
