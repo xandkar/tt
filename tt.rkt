@@ -819,6 +819,7 @@
                     (filter
                       (λ (p) (< 0 (length (peer->msgs p))))
                       peers-all)])
+             ; TODO Deeper de-duping
              (log-info "Known peers mentioned: ~a" (length peers-mentioned))
              (log-info "Known peers parsed ~a" (length peers-parsed))
              (log-info "Known peers total: ~a" (length peers-all))
