@@ -468,22 +468,22 @@
                (log-debug "Last-Modified <= current skipping the rest of ~v" u-str)
                #t))))
   (if (not cached?)
-    (begin
-      (log-debug
-        "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
-        u-str etag lmod)
-      (make-parent-directory* cached-object-path)
-      (make-parent-directory* cached-etag-path)
-      (make-parent-directory* cached-lmod-path)
-      (call-with-output-file cached-object-path
-                             (curry copy-port body-input)
-                             #:exists 'replace)
-      (when etag
-        (display-to-file etag cached-etag-path #:exists 'replace))
-      (when lmod
-        (display-to-file lmod cached-lmod-path #:exists 'replace))
-      'downloaded-new)
-    'skipped-cached))
+      (begin
+        (log-debug
+          "Downloading the rest of ~v. ETag: ~a, Last-Modified: ~v"
+          u-str etag lmod)
+        (make-parent-directory* cached-object-path)
+        (make-parent-directory* cached-etag-path)
+        (make-parent-directory* cached-lmod-path)
+        (call-with-output-file cached-object-path
+                               (curry copy-port body-input)
+                               #:exists 'replace)
+        (when etag
+          (display-to-file etag cached-etag-path #:exists 'replace))
+        (when lmod
+          (display-to-file lmod cached-lmod-path #:exists 'replace))
+        'downloaded-new)
+      'skipped-cached))
 
 (: uri-download
    (-> Positive-Float Url
