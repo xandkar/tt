@@ -483,10 +483,10 @@
                (when etag
                  (display-to-file etag cached-etag-path #:exists 'replace))
                (when lmod
-                 (display-to-file lmod cached-lmod-path #:exists 'replace))))
-           (close-input-port body-input))]
+                 (display-to-file lmod cached-lmod-path #:exists 'replace)))))]
        [_
-         (log-error "HTTP error URL:~a  status:~a" u-str status)])]))
+         (log-error "HTTP error URL:~a  status:~a" u-str status)])
+     (close-input-port body-input)]))
 
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
