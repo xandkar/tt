@@ -649,8 +649,8 @@
                      (define path (build-path cache-object-dir filename))
                      (define size (/ (file-size path) 1000000.0))
                      (log-debug "BEGIN parsing ~a MB from file: ~v"
-                               size
-                               (path->string path))
+                                size
+                                (path->string path))
                      (define t0 (current-inexact-milliseconds))
                      (define m (filter-map
                                  (λ (line)
@@ -659,9 +659,9 @@
                                    (file->lines path))))
                      (define t1 (current-inexact-milliseconds))
                      (log-debug "END parsing ~a MB in ~a seconds from file: ~v."
-                               size
-                               (* 0.001 (- t1 t0))
-                               (path->string path))
+                                size
+                                (* 0.001 (- t1 t0))
+                                (path->string path))
                      (when (empty? m)
                        (log-debug "No messages found in ~a" (path->string path)))
                      m)
@@ -692,6 +692,140 @@
     (current-logger logger)
     log-writer))
 
+(: crawl (-> Void))
+(define (crawl)
+  (let* ([peers-sort
+           (λ (peers) (sort peers (match-lambda**
+                                    [((Peer n1 _ _) (Peer n2 _ _))
+                                     (string<? (if n1 n1 "")
+                                               (if n2 n2 ""))])))]
+         [peers-all-file
+           (build-path tt-home-dir "peers-all")]
+         [peers-mentioned-file
+           (build-path tt-home-dir "peers-mentioned")]
+         [peers-parsed-file
+           (build-path tt-home-dir "peers-parsed")]
+         [peers-mentioned-curr
+           (mentioned-peers-in-cache)]
+         [peers-mentioned-prev
+           (file->peers peers-mentioned-file)]
+         [peers-mentioned
+           (peers-sort (uniq (append peers-mentioned-prev
+                                     peers-mentioned-curr)))]
+         [peers-all-prev
+           (file->peers peers-all-file)]
+         [peers-all
+           (list->set (append peers-mentioned
+                              peers-all-prev))]
+         [peers-discovered
+           (set-subtract peers-all (list->set peers-all-prev))]
+         [peers-all
+           (peers-sort (set->list peers-all))]
+         [peers-parsed
+           (filter
+             (λ (p) (< 0 (length (peer->msgs p))))
+             peers-all)])
+    ; TODO Deeper de-duping
+    (log-info "Known peers mentioned: ~a" (length peers-mentioned))
+    (log-info "Known peers parsed ~a" (length peers-parsed))
+    (log-info "Known peers total: ~a" (length peers-all))
+    (log-info "Discovered ~a new peers:~n~a"
+              (set-count peers-discovered)
+              (pretty-format (map
+                               (λ (p) (cons (Peer-nick p)
+                                            (url->string (Peer-uri p))))
+                               (set->list peers-discovered))))
+    (peers->file peers-mentioned
+                 peers-mentioned-file)
+    (peers->file peers-parsed
+                 peers-parsed-file)
+    (peers->file peers-all
+                 peers-all-file)))
+
+(: read (-> (Listof String) Number Number Timeline-Order Out-Format Void))
+(define (read file-paths ts-min ts-max order out-format)
+  (let* ([peers
+           (paths->peers file-paths)]
+         [msgs
+           (timeline-sort (peers->timeline peers) order)]
+         [include?
+           (λ (m)
+              (and (or (not ts-min) (>= (Msg-ts-epoch m) ts-min))
+                   (or (not ts-max) (<= (Msg-ts-epoch m) ts-max))))])
+    (timeline-print out-format (filter include? msgs))))
+
+(: upload (-> Void))
+(define (upload)
+  ; FIXME Should not exit from here, but only after cleanup/logger-stoppage.
+  (if (system (path->string (build-path tt-home-dir "hooks" "upload")))
+      (exit 0)
+      (exit 1)))
+
+(: download (-> (Listof String) Positive-Integer Positive-Float Void))
+(define (download file-paths num-workers timeout)
+  (let ([peers (paths->peers file-paths)])
+    (define-values (_res _cpu real-ms _gc)
+      (time-apply timeline-download (list num-workers timeout peers)))
+    (log-info "Downloaded timelines from ~a peers in ~a seconds."
+              (length peers)
+              (/ real-ms 1000.0))))
+
+(: dispatch (-> String Void))
+(define (dispatch command)
+  (match command
+    [(or "d" "download")
+     ; Initially, 15 was fastest out of the tried: 1, 5, 10, 20.  Then I
+     ; started noticing significant slowdowns. Reducing to 5 seems to help.
+     (let ([num-workers 5]
+           [timeout     10.0])
+       (command-line
+         #:program "tt download"
+         #:once-each
+         [("-j" "--jobs")
+          njobs "Number of concurrent jobs."
+          (set! num-workers (string->number njobs))]
+         [("-t" "--timeout")
+          seconds "Timeout seconds per request."
+          (set! timeout (string->number seconds))]
+         #:args file-paths
+         (download file-paths num-workers timeout)))]
+    [(or "u" "upload")
+     (command-line
+       #:program "tt upload" #:args () (upload))]
+    [(or "r" "read")
+     (let ([out-format 'multi-line]
+           [order      'old->new]
+           [ts-min     #f]
+           [ts-max     #f])
+       (command-line
+         #:program "tt read"
+         #:once-each
+         [("-r" "--rev")
+          "Reverse displayed timeline order."
+          (set! order 'new->old)]
+         [("-m" "--min")
+          m "Earliest time to display (ignore anything before it)."
+          (set! ts-min (rfc3339->epoch m))]
+         [("-x" "--max")
+          x "Latest time to display (ignore anything after it)."
+          (set! ts-max (rfc3339->epoch x))]
+         #:once-any
+         [("-s" "--short")
+          "Short output format"
+          (set! out-format 'single-line)]
+         [("-l" "--long")
+          "Long output format"
+          (set! out-format 'multi-line)]
+         #:args file-paths
+         (read file-paths ts-min ts-max order out-format)))]
+    [(or "c" "crawl")
+     (command-line
+       #:program "tt crawl" #:args () (crawl))]
+    [command
+      (eprintf "Error: invalid command: ~v\n" command)
+      (eprintf "Please use the \"--help\" option to see a list of available commands.\n")
+      (exit 1)]))
+
 (module+ main
   (let ([log-level 'info])
     (command-line
@@ -713,130 +847,6 @@
       #:args (command . args)
       (define log-writer (log-writer-start log-level))
       (current-command-line-arguments (list->vector args))
-      (match command
-        [(or "d" "download")
-         ; Initially, 15 was fastest out of the tried: 1, 5, 10, 20.  Then I
-         ; started noticing significant slowdowns. Reducing to 5 seems to help.
-         (let ([num-workers 5]
-               [timeout     10.0])
-           (command-line
-             #:program
-             "tt download"
-             #:once-each
-             [("-j" "--jobs")
-              njobs "Number of concurrent jobs."
-              (set! num-workers (string->number njobs))]
-             [("-t" "--timeout")
-              seconds "Timeout seconds per request."
-              (set! timeout (string->number seconds))]
-             #:args file-paths
-             (let ([peers (paths->peers file-paths)])
-               (define-values (_res _cpu real-ms _gc)
-                 (time-apply timeline-download (list num-workers timeout peers)))
-               (log-info "Downloaded timelines from ~a peers in ~a seconds."
-                         (length peers)
-                         (/ real-ms 1000.0)))))]
-        [(or "u" "upload")
-         (command-line
-           #:program
-           "tt upload"
-           #:args ()
-           (if (system (path->string (build-path tt-home-dir "hooks" "upload")))
-               (exit 0)
-               (exit 1)))]
-        [(or "r" "read")
-         (let ([out-format 'multi-line]
-               [order      'old->new]
-               [ts-min     #f]
-               [ts-max     #f])
-           (command-line
-             #:program
-             "tt read"
-             #:once-each
-             [("-r" "--rev")
-              "Reverse displayed timeline order."
-              (set! order 'new->old)]
-             [("-m" "--min")
-              m "Earliest time to display (ignore anything before it)."
-              (set! ts-min (rfc3339->epoch m))]
-             [("-x" "--max")
-              x "Latest time to display (ignore anything after it)."
-              (set! ts-max (rfc3339->epoch x))]
-             #:once-any
-             [("-s" "--short")
-              "Short output format"
-              (set! out-format 'single-line)]
-             [("-l" "--long")
-              "Long output format"
-              (set! out-format 'multi-line)]
-             #:args file-paths
-             (let* ([peers
-                      (paths->peers file-paths)]
-                    [timeline
-                      (timeline-sort (peers->timeline peers) order)]
-                    [timeline
-                      (filter (λ (m) (and (if ts-min (>= (Msg-ts-epoch m)
-                                                         ts-min)
-                                              #t)
-                                          (if ts-max (<= (Msg-ts-epoch m)
-                                                         ts-max)
-                                              #t)))
-                              timeline)])
-               (timeline-print out-format timeline))))]
-        [(or "c" "crawl")
-         (command-line
-           #:program
-           "tt crawl"
-           #:args ()
-           (let* ([peers-sort
-                    (λ (peers) (sort peers (match-lambda**
-                                             [((Peer n1 _ _) (Peer n2 _ _))
-                                              (string<? (if n1 n1 "")
-                                                        (if n2 n2 ""))])))]
-                  [peers-all-file
-                    (build-path tt-home-dir "peers-all")]
-                  [peers-mentioned-file
-                    (build-path tt-home-dir "peers-mentioned")]
-                  [peers-parsed-file
-                    (build-path tt-home-dir "peers-parsed")]
-                  [peers-mentioned-curr
-                    (mentioned-peers-in-cache)]
-                  [peers-mentioned-prev
-                    (file->peers peers-mentioned-file)]
-                  [peers-mentioned
-                    (peers-sort (uniq (append peers-mentioned-prev
-                                              peers-mentioned-curr)))]
-                  [peers-all-prev
-                    (file->peers peers-all-file)]
-                  [peers-all
-                    (list->set (append peers-mentioned
-                                       peers-all-prev))]
-                  [peers-discovered
-                    (set-subtract peers-all (list->set peers-all-prev))]
-                  [peers-all
-                    (peers-sort (set->list peers-all))]
-                  [peers-parsed
-                    (filter
-                      (λ (p) (< 0 (length (peer->msgs p))))
-                      peers-all)])
-             ; TODO Deeper de-duping
-             (log-info "Known peers mentioned: ~a" (length peers-mentioned))
-             (log-info "Known peers parsed ~a" (length peers-parsed))
-             (log-info "Known peers total: ~a" (length peers-all))
-             (log-info "Discovered ~a new peers:~n~a"
-                       (set-count peers-discovered)
-                       (pretty-format (map
-                                        (λ (p) (cons (Peer-nick p)
-                                                     (url->string (Peer-uri p))))
-                                        (set->list peers-discovered))))
-             (peers->file peers-mentioned
-                          peers-mentioned-file)
-             (peers->file peers-parsed
-                          peers-parsed-file)
-             (peers->file peers-all
-                          peers-all-file)))]
-        [command
-          (eprintf "Error: invalid command: ~v\n" command)
-          (eprintf "Please use the \"--help\" option to see a list of available commands.\n")
-          (exit 1)])
+      ; TODO dispatch should return status with which we should exit after cleanups
+      (dispatch command)
       (log-writer-stop log-writer))))
