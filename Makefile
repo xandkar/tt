@@ -6,7 +6,7 @@ PREFIX   := $(HOME)
 .PHONY: build
 build: $(EXE_FILE)
 
-$(EXE_FILE): $(SRC_FILE)
+$(EXE_FILE): $(SRC_FILE) info.rkt
 	raco exe -o $@ $<
 
 .PHONY: install
