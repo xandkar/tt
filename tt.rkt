@@ -38,6 +38,7 @@
 (struct Peer
         ([nick    : (Option String)]
          [uri     : Url]
+         [uri-str : String]
          [comment : (Option String)])
         #:transparent)
 
@@ -46,6 +47,27 @@
          [headers     : (Listof Bytes)]
          [body-input  : Input-Port])
         #:transparent)
+
+(define-custom-set-types peers
+  #:elem? Peer?
+  (λ (p1 p2)
+     (equal? (Peer-uri-str p1)
+             (Peer-uri-str p2)))
+  (λ (p)
+     (equal-hash-code (Peer-uri-str p))))
+; XXX Without supplying above explicit hash procedure, we INTERMITTENTLY get
+;     the following contract violations:
+;
+;         custom-elem-contents: contract violation
+;           expected: custom-elem?
+;           given: #f
+;           context...:
+;            /usr/share/racket/collects/racket/private/set-types.rkt:104:0: custom-set->list
+;            /home/siraaj/proj/pub/tt/tt.rkt:716:0: crawl
+;            /usr/share/racket/collects/racket/cmdline.rkt:191:51
+;            body of (submod "/home/siraaj/proj/pub/tt/tt.rkt" main)
+;
+; TODO Investigate why and make a minimal reproducible test case.
 
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
@@ -317,7 +339,8 @@
        [#f
          (log-error "Invalid URI in peer string: ~v" str)
          #f]
-       [url (Peer nick url comment)])]
+       [url
+         (Peer nick url (url->string url) comment)])]
     [_
       (log-debug "Invalid peer string: ~v" str)
       #f]))
@@ -325,28 +348,28 @@
 (module+ test
   (check-equal?
     (str->peer "foo http://bar/file.txt # some rando")
-    (Peer "foo" (str->url "http://bar/file.txt") "some rando"))
+    (Peer "foo" (str->url "http://bar/file.txt") "http://bar/file.txt" "some rando"))
   (check-equal?
     (str->peer "http://bar/file.txt # some rando")
-    (Peer #f (str->url "http://bar/file.txt") "some rando"))
+    (Peer #f (str->url "http://bar/file.txt") "http://bar/file.txt" "some rando"))
   (check-equal?
     (str->peer "http://bar/file.txt #")
-    (Peer #f (str->url "http://bar/file.txt") ""))
+    (Peer #f (str->url "http://bar/file.txt") "http://bar/file.txt" ""))
   (check-equal?
     (str->peer "http://bar/file.txt#") ; XXX URLs can have #s
-    (Peer #f (str->url "http://bar/file.txt#") #f))
+    (Peer #f (str->url "http://bar/file.txt#") "http://bar/file.txt#" #f))
   (check-equal?
     (str->peer "http://bar/file.txt")
-    (Peer #f (str->url "http://bar/file.txt") #f))
+    (Peer #f (str->url "http://bar/file.txt") "http://bar/file.txt" #f))
   (check-equal?
     (str->peer "foo http://bar/file.txt")
-    (Peer "foo" (str->url "http://bar/file.txt") #f))
+    (Peer "foo" (str->url "http://bar/file.txt") "http://bar/file.txt" #f))
   (check-equal?
     (str->peer "foo bar # baz")
     #f)
   (check-equal?
     (str->peer "foo bar://baz # quux")
-    (Peer "foo" (str->url "bar://baz") "quux"))
+    (Peer "foo" (str->url "bar://baz") "bar://baz" "quux"))
   (check-equal?
     (str->peer "foo bar//baz # quux")
     #f))
@@ -355,30 +378,34 @@
 (define (filter-comments lines)
   (filter-not (λ (line) (string-prefix? line "#")) lines))
 
-(: str->peers (-> String (Listof Peer)))
+(: str->peers (-> String (Setof Peer)))
 (define (str->peers str)
-  (filter-map str->peer (filter-comments (str->lines str))))
+  (make-immutable-peers (filter-map str->peer (filter-comments (str->lines str)))))
 
-(: peers->file (-> (Listof Peers) Path-String Void))
+(: peers->file (-> (Setof Peers) Path-String Void))
 (define (peers->file peers path)
   (display-lines-to-file
     (map (match-lambda
-           [(Peer n u c)
+           [(Peer n _ u c)
             (format "~a~a~a"
                     (if n (format "~a " n) "")
-                    (url->string u)
+                    u
                     (if c (format " # ~a" c) ""))])
-         peers)
+         (sort (set->list peers)
+               (match-lambda**
+                 [((Peer n1 _ _ _) (Peer n2 _ _ _))
+                  (string<? (if n1 n1 "")
+                            (if n2 n2 ""))])))
     path
     #:exists 'replace))
 
-(: file->peers (-> Path-String (Listof Peer)))
+(: file->peers (-> Path-String (Setof Peer)))
 (define (file->peers file-path)
   (if (file-exists? file-path)
       (str->peers (file->string file-path))
       (begin
         (log-warning "File does not exist: ~v" (path->string file-path))
-        '())))
+        (make-immutable-peers))))
 
 (define re-rfc2822
   #px"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), ([0-9]{2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) ([0-9]{4}) ([0-2][0-9]):([0-6][0-9]):([0-6][0-9]) GMT")
@@ -426,9 +453,9 @@
      [user-peer-file (build-path tt-home-dir "me")]
      [user
        (if (file-exists? user-peer-file)
-           (match (first (file->peers user-peer-file))
-             [(Peer #f u _) (format "+~a"      (url->string u)  )]
-             [(Peer  n u _) (format "+~a; @~a" (url->string u) n)])
+           (match (set-first (file->peers user-peer-file))
+             [(Peer #f _ u _) (format "+~a"      u  )]
+             [(Peer  n _ u _) (format "+~a; @~a" u n)])
            (format "+~a" prog-uri))])
     (format "~a/~a (~a)" prog-name prog-version user)))
 
@@ -563,8 +590,8 @@
 
 (: peer->msgs (-> Peer (Listof Msg)))
 (define (peer->msgs peer)
-  (match-define (Peer nick uri _) peer)
-  (log-debug "Reading peer nick:~v uri:~v" nick (url->string uri))
+  (match-define (Peer nick uri uri-str _) peer)
+  (log-debug "Reading peer nick:~v uri:~v" nick uri-str)
   (define msgs-data (uri-read-cached uri))
   ; TODO Expire cache
   (if msgs-data
@@ -576,8 +603,7 @@
        (Result (U 'skipped-cached 'downloaded-new)
                Any)))
 (define (peer-download timeout peer)
-  (match-define (Peer nick uri _) peer)
-  (define u (url->string uri))
+  (match-define (Peer nick uri u _) peer)
   (log-info "Download BEGIN URL:~a" u)
   (define-values (results _tm-cpu-ms tm-real-ms _tm-gc-ms)
     (time-apply uri-download (list timeout uri)))
@@ -588,12 +614,12 @@
             result)
   result)
 
-(: timeline-download (-> Integer Positive-Float (Listof Peer) Void))
+(: timeline-download (-> Integer Positive-Float (Setof Peer) Void))
 (define (timeline-download num-workers timeout peers)
   (define results
     (concurrent-filter-map num-workers
                            (λ (p) (cons p (peer-download timeout p)))
-                           peers))
+                           (set->list peers)))
   (define peers-ok
     (filter-map (match-lambda
                   [(cons p (cons 'ok _)) p]
@@ -609,15 +635,11 @@
   (peers->file peers-ok (build-path tt-home-dir "peers-last-downloaded-ok"))
   (peers->file peers-err (build-path tt-home-dir "peers-last-downloaded-err")))
 
-(: uniq (∀ (α) (-> (Listof α) (Listof α))))
-(define (uniq xs)
-  (set->list (list->set xs)))
-
-(: peers->timeline (-> (listof Peer) (listof Msg)))
+(: peers->timeline (-> (Listof Peer) (Listof Msg)))
 (define (peers->timeline peers)
-  (append* (filter-map peer->msgs peers)))
+  (append* (filter-map peer->msgs (set->list peers))))
 
-(: timeline-sort (-> (listof Msg) timeline-order (Listof Msgs)))
+(: timeline-sort (-> (Listof Msg) timeline-order (Listof Msgs)))
 (define (timeline-sort msgs order)
   (define cmp (match order
                 ['old->new <]
@@ -625,7 +647,7 @@
   (sort msgs (λ (a b) (cmp (Msg-ts-epoch a)
                            (Msg-ts-epoch b)))))
 
-(: paths->peers (-> (Listof String) (Listof Peer)))
+(: paths->peers (-> (Listof String) (Setof Peer)))
 (define (paths->peers paths)
   (let* ([paths (match paths
                   ['()
@@ -637,11 +659,11 @@
                   [paths
                     (log-debug "Peer ref file paths provided: ~v" paths)
                     (map string->path paths)])]
-         [peers (append* (map file->peers paths))])
-    (log-info "Read-in ~a peers." (length peers))
-    (uniq peers)))
+         [peers (apply set-union (map file->peers paths))])
+    (log-info "Read-in ~a peers." (set-count peers))
+    peers))
 
-(: mentioned-peers-in-cache (-> (Listof Peer)))
+(: mentioned-peers-in-cache (-> (Setof Peer)))
 (define (mentioned-peers-in-cache)
   ; TODO Expire cache
   (define msgs
@@ -666,7 +688,7 @@
                        (log-debug "No messages found in ~a" (path->string path)))
                      m)
                   (directory-list cache-object-dir))))
-  (uniq (append* (map Msg-mentions msgs))))
+  (make-immutable-peers (append* (map Msg-mentions msgs))))
 
 (: log-writer-stop (-> Thread Void))
 (define (log-writer-stop log-writer)
@@ -694,12 +716,7 @@
 
 (: crawl (-> Void))
 (define (crawl)
-  (let* ([peers-sort
-           (λ (peers) (sort peers (match-lambda**
-                                    [((Peer n1 _ _) (Peer n2 _ _))
-                                     (string<? (if n1 n1 "")
-                                               (if n2 n2 ""))])))]
-         [peers-all-file
+  (let* ([peers-all-file
            (build-path tt-home-dir "peers-all")]
          [peers-mentioned-file
            (build-path tt-home-dir "peers-mentioned")]
@@ -710,30 +727,27 @@
          [peers-mentioned-prev
            (file->peers peers-mentioned-file)]
          [peers-mentioned
-           (peers-sort (uniq (append peers-mentioned-prev
-                                     peers-mentioned-curr)))]
+           (set-union peers-mentioned-prev
+                      peers-mentioned-curr)]
          [peers-all-prev
            (file->peers peers-all-file)]
          [peers-all
-           (list->set (append peers-mentioned
-                              peers-all-prev))]
+           (set-union peers-mentioned
+                      peers-all-prev)]
          [peers-discovered
-           (set-subtract peers-all (list->set peers-all-prev))]
-         [peers-all
-           (peers-sort (set->list peers-all))]
+           (set-subtract peers-all
+                         peers-all-prev)]
          [peers-parsed
-           (filter
-             (λ (p) (< 0 (length (peer->msgs p))))
-             peers-all)])
+           (for/set ([p peers-all] #:when (> (length (peer->msgs p)) 0)) p)])
     ; TODO Deeper de-duping
-    (log-info "Known peers mentioned: ~a" (length peers-mentioned))
-    (log-info "Known peers parsed ~a" (length peers-parsed))
-    (log-info "Known peers total: ~a" (length peers-all))
+    (log-info "Known peers mentioned: ~a" (set-count peers-mentioned))
+    (log-info "Known peers parsed ~a" (set-count peers-parsed))
+    (log-info "Known peers total: ~a" (set-count peers-all))
     (log-info "Discovered ~a new peers:~n~a"
               (set-count peers-discovered)
               (pretty-format (map
-                               (λ (p) (cons (Peer-nick p)
-                                            (url->string (Peer-uri p))))
+                               (match-lambda
+                                 [(Peer n _ u c) (list n u c)])
                                (set->list peers-discovered))))
     (peers->file peers-mentioned
                  peers-mentioned-file)
@@ -767,7 +781,7 @@
     (define-values (_res _cpu real-ms _gc)
       (time-apply timeline-download (list num-workers timeout peers)))
     (log-info "Downloaded timelines from ~a peers in ~a seconds."
-              (length peers)
+              (set-count peers)
               (/ real-ms 1000.0))))
 
 (: dispatch (-> String Void))
