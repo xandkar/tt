@@ -30,8 +30,7 @@
 (struct Msg
         ([ts-epoch   : Integer]
          [ts-orig    : String]
-         [nick       : (Option String)]
-         [uri        : Url]
+         [from       : Peer]
          [text       : String]
          [mentions   : (Listof Peer)]))
 
@@ -48,13 +47,19 @@
          [body-input  : Input-Port])
         #:transparent)
 
+(: peers-equal? (-> Peer Peer Boolean))
+(define (peers-equal? p1 p2)
+  (equal? (Peer-uri-str p1)
+          (Peer-uri-str p2)))
+
+(: peer-hash (-> Peer Fixnum))
+(define (peer-hash p)
+  (equal-hash-code (Peer-uri-str p)))
+
 (define-custom-set-types peers
   #:elem? Peer?
-  (λ (p1 p2)
-     (equal? (Peer-uri-str p1)
-             (Peer-uri-str p2)))
-  (λ (p)
-     (equal-hash-code (Peer-uri-str p))))
+  peers-equal?
+  peer-hash)
 ; XXX Without supplying above explicit hash procedure, we INTERMITTENTLY get
 ;     the following contract violations:
 ;
@@ -123,10 +128,9 @@
          [n      (vector-length colors)])
     (λ (out-format color-i msg)
        (let ([color (vector-ref colors (modulo color-i n))]
-             [nick  (Msg-nick msg)]
-             [uri   (url->string (Msg-uri msg))]
-             [text  (Msg-text msg)]
-             [mentions (Msg-mentions msg)])
+             [nick  (Peer-nick (Msg-from msg))]
+             [uri   (Peer-uri-str (Msg-from msg))]
+             [text  (Msg-text msg)])
          (match out-format
            ['single-line
             (let ([nick (if nick nick uri)])
@@ -178,17 +182,18 @@
            (log-debug "Invalid timestamp: ~v" ts)
            #f]))))
 
-(: str->msg (-> (Option String) Url String (Option Msg)))
+(: str->msg (-> Peer String (Option Msg)))
 (define str->msg
   (let ([re (pregexp "^([^\\s\t]+)[\\s\t]+(.*)$")])
-    (λ (nick uri str)
+    (λ (from str)
+       (define from-str (peer->str from))
        (define str-head (substring str 0 (min 100 (string-length str))))
        (with-handlers*
          ([exn:fail?
             (λ (e)
                (log-debug
                  "Failed to parse msg: ~v, from: ~v, at: ~v, because: ~v"
-                 str-head nick (url->string uri) e)
+                 str-head from-str e)
                #f)])
          (match (regexp-match re str)
            [(list _wholething ts-orig text)
@@ -200,14 +205,14 @@
                                      [(list _wholething nick-uri)
                                       (str->peer nick-uri)]))
                             (regexp-match* #px"@<[^\\s]+([\\s]+)?[^>]+>" text))])
-                    (Msg ts-epoch ts-orig nick uri text mentions))
+                    (Msg ts-epoch ts-orig from text mentions))
                   (begin
                     (log-debug
-                      "Msg rejected due to invalid timestamp: ~v, nick:~v, uri:~v"
-                      str-head nick (url->string uri))
+                      "Msg rejected due to invalid timestamp. From:~v. Line:~v"
+                      from-str str-head)
                     #f)))]
            [_
-             (log-debug "Non-msg line from nick:~v, line:~a" nick str-head)
+             (log-debug "Non-msg line. From:~v. Line:~v" from-str str-head)
              #f])))))
 
 (module+ test
@@ -218,7 +223,8 @@
                          (string-append d h m))]
          [tzs (list* "" "Z" tzs)])
     (for* ([n   '("fake-nick")]
-           [u   '("fake-uri")]
+           [u   '("http://fake-uri")]
+           [p   (list (Peer n (string->url u) u ""))]
            [s   '("" ":10")]
            [f   '("" ".1337")]
            [z   tzs]
@@ -227,10 +233,9 @@
           (let* ([ts (string-append "2020-11-18T22:22"
                                     (if (non-empty-string? s) s ":00")
                                     z)]
-                 [m  (str->msg n u (string-append ts sep txt))])
+                 [m  (str->msg p (string-append ts sep txt))])
             (check-not-false m)
-            (check-equal? (Msg-nick m) n)
-            (check-equal? (Msg-uri m) u)
+            (check-equal? (Msg-from m) p)
             (check-equal? (Msg-text m) txt)
             (check-equal? (Msg-ts-orig m) ts (format "Given: ~v" ts))
             )))
@@ -239,9 +244,10 @@
          [tab      "	"]
          [text     "Lorem ipsum"]
          [nick     "foo"]
-         [uri      "bar"]
-         [actual   (str->msg nick uri (string-append ts tab text))]
-         [expected (Msg 1605756129 ts nick uri text '())])
+         [uri      "http://bar/"]
+         [peer     (Peer nick (string->url uri) uri "")]
+         [actual   (str->msg peer (string-append ts tab text))]
+         [expected (Msg 1605756129 ts peer text '())])
     (check-equal?
       (Msg-ts-epoch actual)
       (Msg-ts-epoch expected)
@@ -251,13 +257,17 @@
       (Msg-ts-orig expected)
       "str->msg ts-orig")
     (check-equal?
-      (Msg-nick actual)
-      (Msg-nick expected)
+      (Peer-nick (Msg-from actual))
+      (Peer-nick (Msg-from expected))
       "str->msg nick")
     (check-equal?
-      (Msg-uri actual)
-      (Msg-uri expected)
+      (Peer-uri (Msg-from actual))
+      (Peer-uri (Msg-from expected))
       "str->msg uri")
+    (check-equal?
+      (Peer-uri-str (Msg-from actual))
+      (Peer-uri-str (Msg-from expected))
+      "str->msg uri-str")
     (check-equal?
       (Msg-text actual)
       (Msg-text expected)
@@ -270,9 +280,10 @@
 (module+ test
   (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
 
-(: str->msgs (-> (Option String) Url String (Listof Msg)))
-(define (str->msgs nick uri str)
-  (filter-map (λ (line) (str->msg nick uri line)) (filter-comments (str->lines str))))
+(: str->msgs (-> Peer String (Listof Msg)))
+(define (str->msgs peer str)
+  (filter-map (λ (line) (str->msg peer line))
+              (filter-comments (str->lines str))))
 
 (: cache-dir Path-String)
 (define cache-dir (build-path tt-home-dir "cache"))
@@ -292,11 +303,8 @@
 (define (url->cache-file-path-v2 uri)
   (build-path cache-object-dir (uri-encode (url->string uri))))
 
-(define url->cache-object-path url->cache-file-path-v2)
-
-(: cache-object-filename->url (-> Path-String Url))
-(define (cache-object-filename->url name)
-  (string->url (uri-decode (path->string name))))
+(define url->cache-object-path
+  url->cache-file-path-v2)
 
 (define (url->cache-etag-path uri)
   (build-path cache-dir "etags" (uri-encode (url->string uri))))
@@ -322,7 +330,15 @@
     ([exn:fail? (λ (e) #f)])
     (string->url s)))
 
-(: str->peer (String (Option Peer)))
+(: peer->str (-> Peer String))
+(define (peer->str peer)
+  (match-define (Peer n _ u c) peer)
+  (format "~a~a~a"
+          (if n (format "~a " n) "")
+          u
+          (if c (format " # ~a" c) "")))
+
+(: str->peer (-> String (Option Peer)))
 (define (str->peer str)
   (log-debug "Parsing peer string: ~v" str)
   (match
@@ -385,12 +401,7 @@
 (: peers->file (-> (Setof Peers) Path-String Void))
 (define (peers->file peers path)
   (display-lines-to-file
-    (map (match-lambda
-           [(Peer n _ u c)
-            (format "~a~a~a"
-                    (if n (format "~a " n) "")
-                    u
-                    (if c (format " # ~a" c) ""))])
+    (map peer->str
          (sort (set->list peers)
                (match-lambda**
                  [((Peer n1 _ _ _) (Peer n2 _ _ _))
@@ -580,13 +591,17 @@
 
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
-  (void (foldl (match-lambda**
-                 [((and m (Msg _ _ nick _ _ _)) (cons prev-nick i))
-                  (let ([i (if (equal? prev-nick nick) i (+ 1 i))])
-                    (msg-print out-format i m)
-                    (cons nick i))])
-               (cons "" 0)
-               timeline)))
+  (match timeline
+    ['()
+     (void)]
+    [(cons first-msg _)
+     (void (foldl (match-lambda**
+                    [((and m (Msg _ _ from _ _)) (cons prev-from i))
+                     (let ([i (if (peers-equal? prev-from from) i (+ 1 i))])
+                       (msg-print out-format i m)
+                       (cons from i))])
+                  (cons (Msg-from first-msg) 0)
+                  timeline))]))
 
 (: peer->msgs (-> Peer (Listof Msg)))
 (define (peer->msgs peer)
@@ -595,7 +610,7 @@
   (define msgs-data (uri-read-cached uri))
   ; TODO Expire cache
   (if msgs-data
-      (str->msgs nick uri msgs-data)
+      (str->msgs peer msgs-data)
       '()))
 
 (: peer-download
@@ -676,7 +691,10 @@
                      (define t0 (current-inexact-milliseconds))
                      (define m (filter-map
                                  (λ (line)
-                                    (str->msg #f (cache-object-filename->url filename) line))
+                                    (define url-str (uri-decode (path->string filename)))
+                                    (define url (string->url url-str))
+                                    (define from (Peer #f url url-str ""))
+                                    (str->msg from line))
                                  (filter-comments
                                    (file->lines path))))
                      (define t1 (current-inexact-milliseconds))
