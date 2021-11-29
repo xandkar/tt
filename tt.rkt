@@ -28,16 +28,16 @@
               (cons 'error β))))
 
 (struct User
-  ([uri  : Url]
-   [nick : (Option String)]))
+        ([uri  : Url]
+         [nick : (Option String)]))
 
 (struct User-Agent
-  ([user : User]
-   [prog : Prog]))
+        ([user : User]
+         [prog : Prog]))
 
 (struct Prog
-  ([name    : String]
-   [version : String]))
+        ([name    : String]
+         [version : String]))
 
 (struct Msg
         ([ts-epoch   : Integer]
@@ -72,8 +72,8 @@
   (match-define (User u0 n) user)
   (define u (url->string u0))
   (if n
-    (format "+~a; @~a" u n)
-    (format "+~a"      u  )))
+      (format "+~a; @~a" u n)
+      (format "+~a"      u  )))
 
 (: user-agent->str (-> User-Agent String))
 (define (user-agent->str ua)
