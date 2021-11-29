@@ -74,6 +74,43 @@
 ;
 ; TODO Investigate why and make a minimal reproducible test case.
 
+(define (peers-union . peer-sets)
+  (define groups
+    (foldl
+      (λ (p groups)
+         (hash-update groups (Peer-uri-str p) (λ (group) (cons p group)) '()))
+      (hash)
+      (append* (map set->list peer-sets))))
+  (define (merge peers)
+    (match peers
+      ['() (raise 'impossible)]
+      [(list p) p]
+      [(list* p1 p2 ps)
+       (let* ([n1 (Peer-nick p1)]
+              [n2 (Peer-nick p2)]
+              [p (cond
+                   [(and (not n1) (not n2)) p1]
+                   [(and      n1       n2 ) p1]
+                   [(and      n1  (not n2)) p1]
+                   [(and (not n1)      n2)  p2]
+                   [else
+                     (raise 'impossible)])])
+         (merge (cons p ps)))]))
+  (make-immutable-peers (map merge (hash-values groups))))
+
+(module+ test
+  (let* ([u1 "http://foo/bar"]
+         [u2 "http://baz/quux"]
+         [p1 (Peer #f (string->url u1) u1 #f)]
+         [p2 (Peer "a" (string->url u1) u1 #f)]
+         [p3 (Peer "b" (string->url u2) u2 #f)]
+         [s1 (make-immutable-peers (list p1))]
+         [s2 (make-immutable-peers (list p2 p3))])
+    (check-true (peers? (peers-union s1 s2)))
+    (check-true (peers? (peers-union s2 s1)))
+    (check-equal? (list p3 p2) (set->list (peers-union s1 s2)))
+    (check-equal? (list p3 p2) (set->list (peers-union s2 s1)))))
+
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
 
@@ -224,7 +261,7 @@
          [tzs (list* "" "Z" tzs)])
     (for* ([n   '("fake-nick")]
            [u   '("http://fake-uri")]
-           [p   (list (Peer n (string->url u) u ""))]
+           [p   (list (Peer n (string->url u) u #f))]
            [s   '("" ":10")]
            [f   '("" ".1337")]
            [z   tzs]
@@ -245,7 +282,7 @@
          [text     "Lorem ipsum"]
          [nick     "foo"]
          [uri      "http://bar/"]
-         [peer     (Peer nick (string->url uri) uri "")]
+         [peer     (Peer nick (string->url uri) uri #f)]
          [actual   (str->msg peer (string-append ts tab text))]
          [expected (Msg 1605756129 ts peer text '())])
     (check-equal?
@@ -650,7 +687,7 @@
   (peers->file peers-ok (build-path tt-home-dir "peers-last-downloaded-ok"))
   (peers->file peers-err (build-path tt-home-dir "peers-last-downloaded-err")))
 
-(: peers->timeline (-> (Listof Peer) (Listof Msg)))
+(: peers->timeline (-> (Setof Peer) (Listof Msg)))
 (define (peers->timeline peers)
   (append* (filter-map peer->msgs (set->list peers))))
 
@@ -674,38 +711,27 @@
                   [paths
                     (log-debug "Peer ref file paths provided: ~v" paths)
                     (map string->path paths)])]
-         [peers (apply set-union (map file->peers paths))])
+         [peers (apply peers-union (map file->peers paths))])
     (log-info "Read-in ~a peers." (set-count peers))
     peers))
 
-(: mentioned-peers-in-cache (-> (Setof Peer)))
-(define (mentioned-peers-in-cache)
-  ; TODO Expire cache
-  (define msgs
-    (append* (map (λ (filename)
-                     (define path (build-path cache-object-dir filename))
-                     (define size (/ (file-size path) 1000000.0))
-                     (log-debug "BEGIN parsing ~a MB from file: ~v"
-                                size
-                                (path->string path))
-                     (define t0 (current-inexact-milliseconds))
-                     (define m (filter-map
-                                 (λ (line)
-                                    (define url-str (uri-decode (path->string filename)))
-                                    (define url (string->url url-str))
-                                    (define from (Peer #f url url-str ""))
-                                    (str->msg from line))
-                                 (filter-comments
-                                   (file->lines path))))
-                     (define t1 (current-inexact-milliseconds))
-                     (log-debug "END parsing ~a MB in ~a seconds from file: ~v."
-                                size
-                                (* 0.001 (- t1 t0))
-                                (path->string path))
-                     (when (empty? m)
-                       (log-debug "No messages found in ~a" (path->string path)))
-                     m)
-                  (directory-list cache-object-dir))))
+(: cache-filename->peer (-> Path-String (Option Peer)))
+(define (cache-filename->peer filename)
+  (define nick #f) ; TODO Look it up in the nick-db when it exists.
+  (define url-str (uri-decode (path->string filename))) ; TODO Can these crash?
+  (match (str->url url-str)
+    [#f #f]
+    [url (Peer nick url url-str #f)]))
+
+(: peers-cached (-> (Setof Peer)))
+(define (peers-cached)
+  ; TODO Expire cache?
+  (make-immutable-peers
+    (filter-map cache-filename->peer
+                (directory-list cache-object-dir))))
+
+(: peers-mentioned (-> (Listof Msg) (Setof Peer)))
+(define (peers-mentioned msgs)
   (make-immutable-peers (append* (map Msg-mentions msgs))))
 
 (: log-writer-stop (-> Thread Void))
@@ -740,24 +766,32 @@
            (build-path tt-home-dir "peers-mentioned")]
          [peers-parsed-file
            (build-path tt-home-dir "peers-parsed")]
+         [peers-cached-file
+           (build-path tt-home-dir "peers-cached")]
+         [peers-cached
+           (peers-cached)]
+         [cached-timeline
+           (peers->timeline peers-cached)]
          [peers-mentioned-curr
-           (mentioned-peers-in-cache)]
+           (peers-mentioned cached-timeline)]
          [peers-mentioned-prev
            (file->peers peers-mentioned-file)]
          [peers-mentioned
-           (set-union peers-mentioned-prev
-                      peers-mentioned-curr)]
+           (peers-union peers-mentioned-prev
+                        peers-mentioned-curr)]
          [peers-all-prev
            (file->peers peers-all-file)]
          [peers-all
-           (set-union peers-mentioned
-                      peers-all-prev)]
+           (peers-union peers-mentioned
+                        peers-all-prev
+                        peers-cached)]
          [peers-discovered
            (set-subtract peers-all
                          peers-all-prev)]
          [peers-parsed
            (for/set ([p peers-all] #:when (> (length (peer->msgs p)) 0)) p)])
     ; TODO Deeper de-duping
+    (log-info "Known peers cached ~a" (set-count peers-cached))
     (log-info "Known peers mentioned: ~a" (set-count peers-mentioned))
     (log-info "Known peers parsed ~a" (set-count peers-parsed))
     (log-info "Known peers total: ~a" (set-count peers-all))
@@ -767,6 +801,8 @@
                                (match-lambda
                                  [(Peer n _ u c) (list n u c)])
                                (set->list peers-discovered))))
+    (peers->file peers-cached
+                 peers-cached-file)
     (peers->file peers-mentioned
                  peers-mentioned-file)
     (peers->file peers-parsed
