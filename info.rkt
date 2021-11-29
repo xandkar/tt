@@ -6,7 +6,7 @@
 (define pkg-desc
   "twtxt client")
 (define version
-  "0.27.1")
+  "0.27.2")
 (define pkg-authors
   '("Siraaj Khandkar <siraaj@khandkar.net>"))
 (define deps

@@ -27,6 +27,18 @@
   (∀ (α β) (U (cons 'ok α)
               (cons 'error β))))
 
+(struct User
+  ([uri  : String]
+   [nick : (Option String)]))
+
+(struct User-Agent
+  ([user : User]
+   [prog : Prog]))
+
+(struct Prog
+  ([name    : String]
+   [version : String]))
+
 (struct Msg
         ([ts-epoch   : Integer]
          [ts-orig    : String]
@@ -46,6 +58,72 @@
          [headers     : (Listof Bytes)]
          [body-input  : Input-Port])
         #:transparent)
+
+(: prog Prog)
+(define prog
+  (Prog "tt" (info:#%info-lookup 'version)))
+
+(: user-default User)
+(define user-default
+  (User "https://github.com/xandkar/tt" #f))
+
+(: user->str (-> User String))
+(define (user->str user)
+  (match-define (User u n) user)
+  (if n
+    (format "+~a; @~a" u n)
+    (format "+~a"      u  )))
+
+(: user-agent->str (-> User-Agent String))
+(define (user-agent->str ua)
+  (match-define (User-Agent u p) ua)
+  (format "~a/~a (~a)" (Prog-name p) (Prog-version p) (user->str u)))
+
+(: user->user-agent User)
+(define (user->user-agent user)
+  (User-Agent user prog))
+
+(: user-agent-str String)
+(define user-agent-str
+  (user-agent->str (user->user-agent user-default)))
+
+(: set-user-agent-str (-> Path-String Void))
+(define (set-user-agent-str filename)
+  (set! user-agent-str (user-agent->str (user->user-agent (file->user filename))))
+  (log-info "User-Agent string is now set to: ~v" user-agent-str))
+
+(: file->user (-> Path-String User))
+(define (file->user filename)
+  (if (file-exists? filename)
+      (match (set->list (file->peers filename))
+        [(list p)
+         (log-info
+           "User-Agent. Found one peer in file: ~v. Using the found peer: ~a"
+           filename
+           (peer->str p))
+         (peer->user p)]
+        [(list* p _)
+         (log-warning
+           "User-Agent. Multiple peers in file: ~v. Picking arbitrary: ~a"
+           filename
+           (peer->str p))
+         (peer->user p)]
+        ['()
+         (log-warning
+           "User-Agent. No peers found in file: ~v. Using the default user: ~a"
+           filename
+           user-default)
+         user-default])
+      (begin
+        (log-warning
+          "User-Agent. File doesn't exist: ~v. Using the default user: ~a"
+          filename
+          user-default)
+        user-default)))
+
+(define (peer->user p)
+  (match-define (Peer n _ u _) p)
+  (User u n))
 
 (: peers-equal? (-> Peer Peer Boolean))
 (define (peers-equal? p1 p2)
@@ -492,21 +570,6 @@
     [_
       #f]))
 
-(: user-agent String)
-(define user-agent
-  (let*
-    ([prog-name      "tt"]
-     [prog-version   (info:#%info-lookup 'version)]
-     [prog-uri       "https://github.com/xandkar/tt"]
-     [user-peer-file (build-path tt-home-dir "me")]
-     [user
-       (if (file-exists? user-peer-file)
-           (match (set-first (file->peers user-peer-file))
-             [(Peer #f _ u _) (format "+~a"      u  )]
-             [(Peer  n _ u _) (format "+~a; @~a" u n)])
-           (format "+~a" prog-uri))])
-    (format "~a/~a (~a)" prog-name prog-version user)))
-
 (: header-get (-> (Listof Bytes) Bytes (Option Bytes)))
 (define (header-get headers name)
   (match (filter-map (curry extract-field name) headers)
@@ -599,7 +662,7 @@
                    (define-values (status-line headers body-input)
                      (http-sendrecv/url
                        u
-                       #:headers (list (format "User-Agent: ~a" user-agent))))
+                       #:headers (list (format "User-Agent: ~a" user-agent-str))))
                    `(ok . ,(Resp status-line headers body-input))))
                (channel-put result-chan result))))
   (define result
@@ -915,6 +978,7 @@
       #:args (command . args)
       (define log-writer (log-writer-start log-level))
       (current-command-line-arguments (list->vector args))
+      (set-user-agent-str (build-path tt-home-dir "me"))
       ; TODO dispatch should return status with which we should exit after cleanups
       (dispatch command)
       (log-writer-stop log-writer))))
