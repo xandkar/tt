@@ -28,7 +28,7 @@
               (cons 'error β))))
 
 (struct User
-  ([uri  : String]
+  ([uri  : Url]
    [nick : (Option String)]))
 
 (struct User-Agent
@@ -65,11 +65,12 @@
 
 (: user-default User)
 (define user-default
-  (User "https://github.com/xandkar/tt" #f))
+  (User (string->url "https://github.com/xandkar/tt") #f))
 
 (: user->str (-> User String))
 (define (user->str user)
-  (match-define (User u n) user)
+  (match-define (User u0 n) user)
+  (define u (url->string u0))
   (if n
     (format "+~a; @~a" u n)
     (format "+~a"      u  )))
@@ -121,8 +122,9 @@
           user-default)
         user-default)))
 
+(: peer->user (-> Peer User))
 (define (peer->user p)
-  (match-define (Peer n _ u _) p)
+  (match-define (Peer n u _ _) p)
   (User u n))
 
 (: peers-equal? (-> Peer Peer Boolean))
