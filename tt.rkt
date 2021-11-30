@@ -837,10 +837,10 @@
     (hash)
     msgs))
 
-(: update-nicks-history (-> (Listof Msg) Void))
-(define (update-nicks-history msgs)
+(: update-nicks-history-files (-> Nick-Hist Void))
+(define (update-nicks-history-files nick-hist)
   (hash-for-each
-    (msgs->nick-hist msgs)
+    nick-hist
     (λ (url nick->hist)
        (define path (build-path tt-home-dir "nicks" "seen" (uri-encode (url->string url))))
        (make-parent-directory* path)
@@ -873,6 +873,15 @@
 (: nick-hist-common (-> Nick-Hist Url (Option String)))
 (define (nick-hist-common nick-hist url)
   (nick-hist-most-by nick-hist url Hist-freq))
+
+(: peers-update-nick-to-common (-> Nick-Hist (Listof Peer) (Listof Peer)))
+(define (peers-update-nick-to-common nick-hist peers)
+  (map
+    (λ (p)
+       (match (nick-hist-common nick-hist (Peer-uri p))
+         [#f p]
+         [n (struct-copy Peer p [nick n])]))
+    peers))
 
 (module+ test
   (let* ([url-str  "http://foo"]
@@ -918,6 +927,8 @@
            (peers-cached)]
          [cached-timeline
            (peers->timeline peers-cached)]
+         [nick-hist
+           (msgs->nick-hist cached-timeline)]
          [peers-mentioned-curr
            (peers-mentioned cached-timeline)]
          [peers-mentioned-prev
@@ -925,16 +936,14 @@
          [peers-all-prev
            (file->peers peers-all-file)]
          [peers-mentioned
-           (begin
-             ; XXX Updating nicks before running peers-merge,
-             ;     since peers-merge is expected to refer to it in the future.
-             (update-nicks-history cached-timeline)
-             (peers-merge peers-mentioned-prev
-                          peers-mentioned-curr))]
+           (peers-merge peers-mentioned-prev
+                        peers-mentioned-curr)]
          [peers-all
-           (peers-merge peers-mentioned
-                        peers-all-prev
-                        peers-cached)]
+           (peers-update-nick-to-common
+             nick-hist
+             (peers-merge peers-mentioned
+                          peers-all-prev
+                          peers-cached))]
          [peers-discovered
            (set->list (set-subtract (make-immutable-peers peers-all)
                                     (make-immutable-peers peers-all-prev)))]
@@ -951,6 +960,7 @@
                                (match-lambda
                                  [(Peer n _ u c) (list n u c)])
                                peers-discovered)))
+    (update-nicks-history-files nick-hist)
     (peers->file peers-cached
                  peers-cached-file)
     (peers->file peers-mentioned
