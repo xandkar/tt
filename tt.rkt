@@ -61,12 +61,6 @@
          [comment : (Option String)])
         #:transparent)
 
-(struct Resp
-        ([status-line : String]
-         [headers     : (Listof Bytes)]
-         [body-input  : Input-Port])
-        #:transparent)
-
 (: prog Prog)
 (define prog
   (Prog "tt" (info:#%info-lookup 'version)))
@@ -594,6 +588,9 @@
    (-> Url (Listof (U Bytes String)) Input-Port
        (U 'skipped-cached 'downloaded-new))) ; TODO 'ok|'error ?
 (define (uri-download-from-port u headers body-input)
+   ; TODO Update message db from here? or where?
+   ; - 1st try can just be an in-memory set that gets written-to
+   ;   and read-from disk as a whole.
   (define u-str (url->string u))
   (log-debug "uri-download-from-port ~v into ~v" u-str cached-object-path)
   (define cached-object-path (url->cache-object-path u))
@@ -653,19 +650,6 @@
                (channel-put timeout-chan '(error . timeout)))))
   (define result-thread
     (thread (λ ()
-               ; XXX We timeout getting a response, but body download could
-               ; also take a long time and we might want to time that out as
-               ; well, but then we may end-up with partially downloaded
-               ; objects. But that could happen anyway if the server drops the
-               ; connection for whatever reason.
-               ;
-               ; Maybe that is OK once we start treating the
-               ; downloaded object as an addition to the stored set of
-               ; messages, rather than the final set of messages.
-
-               ; TODO message db
-               ; - 1st try can just be an in-memory set that gets written-to
-               ;   and read-from disk as a whole.
                (define result
                  (with-handlers
                    ; TODO Maybe name each known errno? (exn:fail:network:errno-errno e)
@@ -677,31 +661,26 @@
                      (http-sendrecv/url
                        u
                        #:headers (list (format "User-Agent: ~a" user-agent-str))))
-                   `(ok . ,(Resp status-line headers body-input))))
+                   (log-debug "headers: ~v" headers)
+                   (log-debug "status-line: ~v" status-line)
+                   (define status
+                     (string->number (second (string-split (bytes->string/utf-8 status-line)))))
+                   (log-debug "status: ~v" status)
+                   (let ([result
+                           ; TODO Handle redirects.
+                           ; TODO Should a redirect update a peer URL?
+                           (match status
+                             [200
+                               `(ok . ,(uri-download-from-port u headers body-input))]
+                             [_
+                               `(error . (http-not-ok . ,status))])])
+                     (close-input-port body-input)
+                     result)))
                (channel-put result-chan result))))
-  (define result
-    (sync timeout-chan
-          result-chan))
+  (define result (sync timeout-chan result-chan))
   (kill-thread result-thread)
   (kill-thread timeout-thread)
-  (match result
-    [(cons 'error _)
-     result]
-    [(cons 'ok (Resp status-line headers body-input))
-     (log-debug "headers: ~v" headers)
-     (log-debug "status-line: ~v" status-line)
-     (define status
-       (string->number (second (string-split (bytes->string/utf-8 status-line)))))
-     (log-debug "status: ~v" status)
-     ; TODO Handle redirects. Should be within same timeout as req and body.
-     (let ([result
-             (match status
-               [200
-                 `(ok . ,(uri-download-from-port u headers body-input))]
-               [_
-                 `(error . (http . ,status))])])
-       (close-input-port body-input)
-       result)]))
+  result)
 
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
