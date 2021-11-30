@@ -407,6 +407,8 @@
 (module+ test
   (check-equal? (str->lines "abc\ndef\n\nghi") '("abc" "def" "ghi")))
 
+; TODO Should return 2 things: 1) msgs; 2) metadata parsed from comments
+; TODO Update peer nick based on metadata?
 (: str->msgs (-> Peer String (Listof Msg)))
 (define (str->msgs peer str)
   (filter-map (λ (line) (str->msg peer line))
