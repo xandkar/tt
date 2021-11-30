@@ -170,6 +170,7 @@
        (let* ([n1 (Peer-nick p1)]
               [n2 (Peer-nick p2)]
               [p (cond
+                   ; TODO Try to pick from nicks db: preferred, otherwise seen
                    [(and (not n1) (not n2)) p1]
                    [(and      n1       n2 ) p1]
                    [(and      n1  (not n2)) p1]
@@ -822,6 +823,34 @@
     (current-logger logger)
     log-writer))
 
+; TODO Track timestamps of when a nick was seen.
+; TODO Track number of times a nick was seen.
+(: peers->nicks-by-url (-> (Listof Peer) (Immutable-HashTable Url (Setof String))))
+(define (peers->nicks-by-url peers)
+  (foldl
+    (match-lambda**
+      [((Peer #f _ _ _) tbl) tbl]
+      [((Peer n  u _ _) tbl) (hash-update tbl u (λ (nicks) (set-add nicks n)) (set))])
+    (hash)
+    peers))
+
+(: update-nicks-history (-> (Listof Peer) Void))
+(define (update-nicks-history peers)
+  (hash-for-each
+    (peers->nicks-by-url peers)
+    (λ (url nicks-curr)
+       (define path (build-path tt-home-dir "nicks" "seen" (uri-encode (url->string url))))
+       (define nicks-prev
+         (if (file-exists? path)
+             (list->set (file->lines path))
+             (begin
+               (make-parent-directory* path)
+               (set))))
+       (display-lines-to-file
+         (set->list (set-union nicks-prev nicks-curr))
+         path
+         #:exists 'replace))))
+
 (: crawl (-> Void))
 (define (crawl)
   ; TODO Test the non-io parts of crawling
@@ -841,11 +870,18 @@
            (peers-mentioned cached-timeline)]
          [peers-mentioned-prev
            (file->peers peers-mentioned-file)]
-         [peers-mentioned
-           (peers-merge peers-mentioned-prev
-                        peers-mentioned-curr)]
          [peers-all-prev
            (file->peers peers-all-file)]
+         [peers-mentioned
+           (begin
+             ; XXX Updating nicks before running peers-merge,
+             ;     since peers-merge is expected to refer to it in the future.
+             (update-nicks-history (append peers-cached
+                                           peers-mentioned-curr
+                                           peers-mentioned-prev
+                                           peers-all-prev))
+             (peers-merge peers-mentioned-prev
+                          peers-mentioned-curr))]
          [peers-all
            (peers-merge peers-mentioned
                         peers-all-prev
