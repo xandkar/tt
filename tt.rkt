@@ -27,6 +27,14 @@
   (∀ (α β) (U (cons 'ok α)
               (cons 'error β))))
 
+(struct Hist
+        ([freq : Nonnegative-Integer]
+         [last : Nonnegative-Integer])
+        #:transparent)
+
+(define-type Nick-Hist
+  (Immutable-HashTable Url (Immutable-HashTable (Option String) Hist)))
+
 (struct User
         ([uri  : Url]
          [nick : (Option String)]))
@@ -171,8 +179,8 @@
               [n2 (Peer-nick p2)]
               [p (cond
                    ; TODO Try to pick from nicks db: preferred, otherwise seen
-                   [(and (not n1) (not n2)) p1]
-                   [(and      n1       n2 ) p1]
+                   [(and (not n1) (not n2)) p1] ; TODO update with most-common nick
+                   [(and      n1       n2 ) p1] ; TODO compare which is more-common
                    [(and      n1  (not n2)) p1]
                    [(and (not n1)      n2)  p2]
                    [else
@@ -823,33 +831,96 @@
     (current-logger logger)
     log-writer))
 
-; TODO Track timestamps of when a nick was seen.
-; TODO Track number of times a nick was seen.
-(: peers->nicks-by-url (-> (Listof Peer) (Immutable-HashTable Url (Setof String))))
-(define (peers->nicks-by-url peers)
+(: msgs->nick-hist (-> (Listof Msg) Nick-Hist))
+(define (msgs->nick-hist msgs)
   (foldl
-    (match-lambda**
-      [((Peer #f _ _ _) tbl) tbl]
-      [((Peer n  u _ _) tbl) (hash-update tbl u (λ (nicks) (set-add nicks n)) (set))])
+    (λ (msg url->nick->hist)
+       (match-define (Msg curr _ from _ mentions) msg)
+       (foldl
+         (λ (peer url->nick->hist)
+            (match-define (Peer nick url _ _) peer)
+            (if nick
+                (hash-update url->nick->hist
+                             url
+                             (λ (nick->hist)
+                                (hash-update nick->hist
+                                             nick
+                                             (match-lambda
+                                               [(Hist freq prev)
+                                                (Hist (+ 1 freq) (max prev curr))])
+                                             (Hist 0 0)))
+                             (hash))
+                url->nick->hist))
+         url->nick->hist
+         (cons from mentions)))
     (hash)
-    peers))
+    msgs))
 
-(: update-nicks-history (-> (Listof Peer) Void))
-(define (update-nicks-history peers)
+(: update-nicks-history (-> (Listof Msg) Void))
+(define (update-nicks-history msgs)
   (hash-for-each
-    (peers->nicks-by-url peers)
-    (λ (url nicks-curr)
+    (msgs->nick-hist msgs)
+    (λ (url nick->hist)
        (define path (build-path tt-home-dir "nicks" "seen" (uri-encode (url->string url))))
-       (define nicks-prev
-         (if (file-exists? path)
-             (list->set (file->lines path))
-             (begin
-               (make-parent-directory* path)
-               (set))))
+       (make-parent-directory* path)
        (display-lines-to-file
-         (set->list (set-union nicks-prev nicks-curr))
+         (map (match-lambda
+                [(cons nick (Hist freq last))
+                 (format "~a ~a ~a" nick freq last)])
+              (sort (hash->list nick->hist)
+                    (match-lambda**
+                      [((cons _ (Hist a _)) (cons _ (Hist b _)))
+                       (> a b)])))
          path
          #:exists 'replace))))
+
+(: nick-hist-most-by (-> Nick-Hist Url (-> Hist Nonnegative-Integer) (Option String)))
+(define (nick-hist-most-by url->nick->hist url by)
+  (match (hash-ref url->nick->hist url #f)
+    [#f #f]
+    [nick->hist
+      (match (sort (hash->list nick->hist)
+                   (λ (a b) (> (by (cdr a))
+                               (by (cdr b)))))
+        ['() #f]
+        [(cons (cons nick _) _) nick])]))
+
+(: nick-hist-latest (-> Nick-Hist Url (Option String)))
+(define (nick-hist-latest nick-hist url)
+  (nick-hist-most-by nick-hist url Hist-last))
+
+(: nick-hist-common (-> Nick-Hist Url (Option String)))
+(define (nick-hist-common nick-hist url)
+  (nick-hist-most-by nick-hist url Hist-freq))
+
+(module+ test
+  (let* ([url-str  "http://foo"]
+         [url      (string->url url-str)]
+         [nick1    "a"]
+         [nick2    "b"]
+         [nick3    "c"]
+         [ts-str-1 "2021-11-29T23:29:08-0500"]
+         [ts-str-2 "2021-11-29T23:30:00-0500"]
+         [ts-1     (rfc3339->epoch ts-str-1)]
+         [ts-2     (rfc3339->epoch ts-str-2)]
+         [msgs
+           (map (match-lambda
+                  [(cons ts-str nick)
+                   (str->msg (str->peer "test http://test")
+                             (string-append ts-str "	Hi @<" nick " " url-str ">"))])
+                (list (cons ts-str-2 nick1)
+                      (cons ts-str-1 nick2)
+                      (cons ts-str-1 nick2)
+                      (cons ts-str-1 nick3)
+                      (cons ts-str-1 nick3)
+                      (cons ts-str-1 nick3)))]
+         [hist
+           (msgs->nick-hist msgs)])
+    (check-equal? (hash-ref (hash-ref hist url) nick1) (Hist 1 ts-2))
+    (check-equal? (hash-ref (hash-ref hist url) nick2) (Hist 2 ts-1))
+    (check-equal? (hash-ref (hash-ref hist url) nick3) (Hist 3 ts-1))
+    (check-equal? (nick-hist-common hist url) nick3)
+    (check-equal? (nick-hist-latest hist url) nick1)))
 
 (: crawl (-> Void))
 (define (crawl)
@@ -876,10 +947,7 @@
            (begin
              ; XXX Updating nicks before running peers-merge,
              ;     since peers-merge is expected to refer to it in the future.
-             (update-nicks-history (append peers-cached
-                                           peers-mentioned-curr
-                                           peers-mentioned-prev
-                                           peers-all-prev))
+             (update-nicks-history cached-timeline)
              (peers-merge peers-mentioned-prev
                           peers-mentioned-curr))]
          [peers-all
