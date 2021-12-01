@@ -792,6 +792,20 @@
 (define (peers-mentioned msgs)
   (append* (map Msg-mentions msgs)))
 
+(: peers-filter-denied-domains (-> (Listof Peer) (Listof Peer)))
+(define (peers-filter-denied-domains peers)
+  (define deny-file (build-path tt-home-dir "domains-deny.txt"))
+  (define denied-hosts
+    (list->set (map string-trim (filter-comments (file->lines deny-file)))))
+  (define denied-domain-patterns
+    (set-map denied-hosts (λ (h) (pregexp (string-append "\\." h "$")))))
+  (filter
+    (λ (p)
+       (define host (url-host (Peer-uri p)))
+       (not (or (set-member? denied-hosts host)
+                (ormap (λ (d) (regexp-match? d host)) denied-domain-patterns))))
+    peers))
+
 (: log-writer-stop (-> Thread Void))
 (define (log-writer-stop log-writer)
   (log-message (current-logger) 'fatal 'stop "Exiting." #f)
@@ -996,11 +1010,14 @@
 
 (: download (-> (Listof String) Positive-Integer Positive-Float Void))
 (define (download file-paths num-workers timeout)
-  (let ([peers (paths->peers file-paths)])
+  (let* ([peers-given (paths->peers file-paths)]
+         [peers-kept (peers-filter-denied-domains peers-given)]
+         [peers-denied (set-subtract peers-given peers-kept)])
+    (log-info "Denied ~a peers" (length peers-denied))
     (define-values (_res _cpu real-ms _gc)
-      (time-apply timeline-download (list num-workers timeout peers)))
+      (time-apply timeline-download (list num-workers timeout peers-kept)))
     (log-info "Downloaded timelines from ~a peers in ~a seconds."
-              (length peers)
+              (length peers-kept)
               (/ real-ms 1000.0))))
 
 (: dispatch (-> String Void))
