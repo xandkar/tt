@@ -1024,9 +1024,7 @@
 (define (dispatch command)
   (match command
     [(or "d" "download")
-     ; Initially, 15 was fastest out of the tried: 1, 5, 10, 20.  Then I
-     ; started noticing significant slowdowns. Reducing to 5 seems to help.
-     (let ([num-workers 5]
+     (let ([num-workers 20] ; 20 was fastest out of the tried: 1, 5, 10, 20, 25, 30.
            [timeout     10.0])
        (command-line
          #:program "tt download"
