@@ -198,6 +198,9 @@
 (: tt-home-dir Path-String)
 (define tt-home-dir (build-path (expand-user-path "~") ".tt"))
 
+(: pub-peers-dir Path-String)
+(define pub-peers-dir (build-path tt-home-dir "peers"))
+
 (: concurrent-filter-map (∀ (α β) (-> Natural (-> α β) (Listof α) (Listof β))))
 (define (concurrent-filter-map num-workers f xs)
   ; TODO preserve order of elements OR communicate that reorder is expected
@@ -523,6 +526,7 @@
 
 (: peers->file (-> (Listof Peers) Path-String Void))
 (define (peers->file peers path)
+  (make-parent-directory* path)
   (display-lines-to-file
     (map peer->str
          (sort peers
@@ -740,8 +744,8 @@
                   [(cons p (cons 'error e))
                    (struct-copy Peer p [comment (format "~s" e)])])
                 results))
-  (peers->file peers-ok (build-path tt-home-dir "peers-last-downloaded-ok"))
-  (peers->file peers-err (build-path tt-home-dir "peers-last-downloaded-err")))
+  (peers->file peers-ok (build-path tt-home-dir "peers-last-downloaded-ok.txt"))
+  (peers->file peers-err (build-path tt-home-dir "peers-last-downloaded-err.txt")))
 
 (: peers->timeline (-> (Listof Peer) (Listof Msg)))
 (define (peers->timeline peers)
@@ -759,7 +763,7 @@
 (define (paths->peers paths)
   (let* ([paths (match paths
                   ['()
-                   (let ([peer-refs-file (build-path tt-home-dir "peers")])
+                   (let ([peer-refs-file (build-path tt-home-dir "following.txt")])
                      (log-debug
                        "No peer ref file paths provided, defaulting to ~v"
                        (path->string peer-refs-file))
@@ -842,8 +846,9 @@
   (hash-for-each
     nick-hist
     (λ (url nick->hist)
-       (define path (build-path tt-home-dir "nicks" "seen" (uri-encode (url->string url))))
-       (make-parent-directory* path)
+       (define filename (string-append (uri-encode (url->string url)) ".txt"))
+       (define filepath (build-path tt-home-dir "nicks" "seen" filename))
+       (make-parent-directory* filepath)
        (display-lines-to-file
          (map (match-lambda
                 [(cons nick (Hist freq last))
@@ -852,7 +857,7 @@
                     (match-lambda**
                       [((cons _ (Hist a _)) (cons _ (Hist b _)))
                        (> a b)])))
-         path
+         filepath
          #:exists 'replace))))
 
 (: nick-hist-most-by (-> Nick-Hist Url (-> Hist Nonnegative-Integer) (Option String)))
@@ -916,13 +921,13 @@
 (define (crawl)
   ; TODO Test the non-io parts of crawling
   (let* ([peers-all-file
-           (build-path tt-home-dir "peers-all")]
+           (build-path pub-peers-dir "all.txt")]
          [peers-mentioned-file
-           (build-path tt-home-dir "peers-mentioned")]
+           (build-path pub-peers-dir "mentioned.txt")]
          [peers-parsed-file
-           (build-path tt-home-dir "peers-parsed")]
+           (build-path pub-peers-dir "downloaded-and-parsed.txt")]
          [peers-cached-file
-           (build-path tt-home-dir "peers-cached")]
+           (build-path pub-peers-dir "downloaded.txt")]
          [peers-cached
            (peers-cached)]
          [cached-timeline
@@ -1075,7 +1080,7 @@
       #:args (command . args)
       (define log-writer (log-writer-start log-level))
       (current-command-line-arguments (list->vector args))
-      (set-user-agent-str (build-path tt-home-dir "me"))
+      (set-user-agent-str (build-path tt-home-dir "user.txt"))
       ; TODO dispatch should return status with which we should exit after cleanups
       (dispatch command)
       (log-writer-stop log-writer))))
