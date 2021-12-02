@@ -855,13 +855,33 @@
     (hash)
     msgs))
 
-(: update-nicks-history-files (-> Nick-Hist Void))
-(define (update-nicks-history-files nick-hist)
+(: url-nick-hist->file (-> Nick-Hist Path-String Void))
+(define (url-nick-hist->file url-nick-hist filepath)
+  (define out (open-output-file filepath #:exists 'replace))
+  (for-each
+    (match-lambda
+      [(cons url nick->hist)
+       (displayln (url->string url) out)
+       (for-each (match-lambda
+                   [(cons nick (Hist freq last))
+                    (displayln (format "    ~a ~a ~a" nick freq last) out)])
+                 (sort (hash->list nick->hist)
+                       (match-lambda**
+                         [((cons _ (Hist a _)) (cons _ (Hist b _)))
+                          (> a b)])))])
+    (sort
+      (hash->list url-nick-hist)
+      (λ (a b) (string<? (url-host (car a))
+                         (url-host (car b))))))
+  (close-output-port out))
+
+(: url-nick-hist->dir (-> Nick-Hist Path-String Void))
+(define (url-nick-hist->dir url-nick-hist dirpath)
   (hash-for-each
-    nick-hist
+    url-nick-hist
     (λ (url nick->hist)
        (define filename (string-append (uri-encode (url->string url)) ".txt"))
-       (define filepath (build-path tt-home-dir "nicks" "seen" filename))
+       (define filepath (build-path dirpath filename))
        (make-parent-directory* filepath)
        (display-lines-to-file
          (map (match-lambda
@@ -873,6 +893,13 @@
                        (> a b)])))
          filepath
          #:exists 'replace))))
+
+; TODO rename: Nick-Hist --> Url-Nick-Hist
+(: update-nicks-history-files (-> Nick-Hist Void))
+(define (update-nicks-history-files url-nick-hist)
+  (define nicks-dir (build-path tt-home-dir "nicks"))
+  (url-nick-hist->file url-nick-hist (build-path nicks-dir "seen.txt"))
+  (url-nick-hist->dir  url-nick-hist (build-path nicks-dir "seen")))
 
 (: nick-hist-most-by (-> Nick-Hist Url (-> Hist Nonnegative-Integer) (Option String)))
 (define (nick-hist-most-by url->nick->hist url by)
