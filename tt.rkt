@@ -166,12 +166,6 @@
 
 (: peers-merge (-> (Listof Peer) * (Listof Peer)))
 (define (peers-merge . peer-sets)
-  (define groups
-    (foldl
-      (λ (p groups)
-         (hash-update groups (Peer-url-str p) (λ (group) (cons p group)) '()))
-      (hash)
-      (append* peer-sets)))
   (define (merge peers)
     (match peers
       ['() (raise 'impossible)]
@@ -188,7 +182,7 @@
                    [else
                      (raise 'impossible)])])
          (merge (cons p ps)))]))
-  (sort (map merge (hash-values groups))
+  (sort (map merge (group-by Peer-url-str (append* peer-sets)))
         (match-lambda**
           [((Peer _ _ u1 _) (Peer _ _ u2 _)) (string<? u1 u2)])))
 
