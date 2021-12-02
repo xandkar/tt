@@ -32,7 +32,7 @@
          [last : Nonnegative-Integer])
         #:transparent)
 
-(define-type Nick-Hist
+(define-type Url-Nick-Hist
   (Immutable-HashTable Url (Immutable-HashTable (Option String) Hist)))
 
 (struct User
@@ -830,7 +830,7 @@
     (current-logger logger)
     log-writer))
 
-(: msgs->nick-hist (-> (Listof Msg) Nick-Hist))
+(: msgs->nick-hist (-> (Listof Msg) Url-Nick-Hist))
 (define (msgs->nick-hist msgs)
   (foldl
     (λ (msg url->nick->hist)
@@ -855,8 +855,8 @@
     (hash)
     msgs))
 
-(: url-nick-hist->file (-> Nick-Hist Path-String Void))
-(define (url-nick-hist->file url-nick-hist filepath)
+(: url-nick-hist->file (-> Url-Nick-Hist Path-String Void))
+(define (url-nick-hist->file unh filepath)
   (define out (open-output-file filepath #:exists 'replace))
   (for-each
     (match-lambda
@@ -870,15 +870,15 @@
                          [((cons _ (Hist a _)) (cons _ (Hist b _)))
                           (> a b)])))])
     (sort
-      (hash->list url-nick-hist)
+      (hash->list unh)
       (λ (a b) (string<? (url-host (car a))
                          (url-host (car b))))))
   (close-output-port out))
 
-(: url-nick-hist->dir (-> Nick-Hist Path-String Void))
-(define (url-nick-hist->dir url-nick-hist dirpath)
+(: url-nick-hist->dir (-> Url-Nick-Hist Path-String Void))
+(define (url-nick-hist->dir unh dirpath)
   (hash-for-each
-    url-nick-hist
+    unh
     (λ (url nick->hist)
        (define filename (string-append (uri-encode (url->string url)) ".txt"))
        (define filepath (build-path dirpath filename))
@@ -894,15 +894,14 @@
          filepath
          #:exists 'replace))))
 
-; TODO rename: Nick-Hist --> Url-Nick-Hist
-(: update-nicks-history-files (-> Nick-Hist Void))
-(define (update-nicks-history-files url-nick-hist)
+(: update-nicks-history-files (-> Url-Nick-Hist Void))
+(define (update-nicks-history-files unh)
   (define nicks-dir (build-path tt-home-dir "nicks"))
-  (url-nick-hist->file url-nick-hist (build-path nicks-dir "seen.txt"))
-  (url-nick-hist->dir  url-nick-hist (build-path nicks-dir "seen")))
+  (url-nick-hist->file unh (build-path nicks-dir "seen.txt"))
+  (url-nick-hist->dir  unh (build-path nicks-dir "seen")))
 
-(: nick-hist-most-by (-> Nick-Hist Url (-> Hist Nonnegative-Integer) (Option String)))
-(define (nick-hist-most-by url->nick->hist url by)
+(: url-nick-hist-most-by (-> Url-Nick-Hist Url (-> Hist Nonnegative-Integer) (Option String)))
+(define (url-nick-hist-most-by url->nick->hist url by)
   (match (hash-ref url->nick->hist url #f)
     [#f #f]
     [nick->hist
@@ -912,19 +911,19 @@
         ['() #f]
         [(cons (cons nick _) _) nick])]))
 
-(: nick-hist-latest (-> Nick-Hist Url (Option String)))
-(define (nick-hist-latest nick-hist url)
-  (nick-hist-most-by nick-hist url Hist-last))
+(: url-nick-hist-latest (-> Url-Nick-Hist Url (Option String)))
+(define (url-nick-hist-latest unh url)
+  (url-nick-hist-most-by unh url Hist-last))
 
-(: nick-hist-common (-> Nick-Hist Url (Option String)))
-(define (nick-hist-common nick-hist url)
-  (nick-hist-most-by nick-hist url Hist-freq))
+(: url-nick-hist-common (-> Url-Nick-Hist Url (Option String)))
+(define (url-nick-hist-common unh url)
+  (url-nick-hist-most-by unh url Hist-freq))
 
-(: peers-update-nick-to-common (-> Nick-Hist (Listof Peer) (Listof Peer)))
-(define (peers-update-nick-to-common nick-hist peers)
+(: peers-update-nick-to-common (-> Url-Nick-Hist (Listof Peer) (Listof Peer)))
+(define (peers-update-nick-to-common unh peers)
   (map
     (λ (p)
-       (match (nick-hist-common nick-hist (Peer-uri p))
+       (match (url-nick-hist-common unh (Peer-uri p))
          [#f p]
          [n (struct-copy Peer p [nick n])]))
     peers))
@@ -955,8 +954,8 @@
     (check-equal? (hash-ref (hash-ref hist url) nick1) (Hist 1 ts-2))
     (check-equal? (hash-ref (hash-ref hist url) nick2) (Hist 2 ts-1))
     (check-equal? (hash-ref (hash-ref hist url) nick3) (Hist 3 ts-1))
-    (check-equal? (nick-hist-common hist url) nick3)
-    (check-equal? (nick-hist-latest hist url) nick1)))
+    (check-equal? (url-nick-hist-common hist url) nick3)
+    (check-equal? (url-nick-hist-latest hist url) nick1)))
 
 (: crawl (-> Void))
 (define (crawl)
@@ -973,7 +972,7 @@
            (peers-cached)]
          [cached-timeline
            (peers->timeline peers-cached)]
-         [nick-hist
+         [url-nick-hist
            (msgs->nick-hist cached-timeline)]
          [peers-mentioned-curr
            (peers-mentioned cached-timeline)]
@@ -986,7 +985,7 @@
                         peers-mentioned-curr)]
          [peers-all
            (peers-update-nick-to-common
-             nick-hist
+             url-nick-hist
              (peers-merge peers-mentioned
                           peers-all-prev
                           peers-cached))]
@@ -1006,7 +1005,7 @@
                                (match-lambda
                                  [(Peer n _ u c) (list n u c)])
                                peers-discovered)))
-    (update-nicks-history-files nick-hist)
+    (update-nicks-history-files url-nick-hist)
     (peers->file peers-cached
                  peers-cached-file)
     (peers->file peers-mentioned
