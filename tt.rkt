@@ -27,6 +27,14 @@
   (∀ (α β) (U (cons 'ok α)
               (cons 'error β))))
 
+(define-type Download-Result
+  (Result (U 'skipped-cached 'downloaded-new)
+          (U 'timeout
+             (Pair 'unsupported-url-scheme String)
+             (Pair 'http-not-ok Positive-Integer)
+             (Pair 'net-error Any)
+             (Pair 'other Any))))
+
 (struct Hist
         ([freq : Nonnegative-Integer]
          [last : Nonnegative-Integer])
@@ -588,15 +596,15 @@
     [(list val) val]
     [_           #f]))
 
-(: uri-download-from-port
+(: uri-download-http-from-port
    (-> Url (Listof (U Bytes String)) Input-Port
        (U 'skipped-cached 'downloaded-new))) ; TODO 'ok|'error ?
-(define (uri-download-from-port u headers body-input)
+(define (uri-download-http-from-port u headers body-input)
    ; TODO Update message db from here? or where?
    ; - 1st try can just be an in-memory set that gets written-to
    ;   and read-from disk as a whole.
   (define u-str (url->string u))
-  (log-debug "uri-download-from-port ~v into ~v" u-str cached-object-path)
+  (log-debug "uri-download-http-from-port ~v into ~v" u-str cached-object-path)
   (define cached-object-path (url->cache-object-path u))
   (define cached-etag-path (url->cache-etag-path u))
   (define cached-lmod-path (url->cache-lmod-path u))
@@ -638,11 +646,8 @@
         'downloaded-new)
       'skipped-cached))
 
-(: uri-download
-   (-> Positive-Float Url
-       (Result (U 'skipped-cached 'downloaded-new)
-               Any))) ; TODO Maybe more-precise error type?
-(define (uri-download timeout u)
+(: uri-download-http (-> Positive-Float Url Download-Result))
+(define (uri-download-http timeout u)
   (define u-str (url->string u))
   (define timeout-chan (make-channel))
   (define result-chan (make-channel))
@@ -675,7 +680,7 @@
                            ; TODO Should a redirect update a peer URL?
                            (match status
                              [200
-                               `(ok . ,(uri-download-from-port u headers body-input))]
+                               `(ok . ,(uri-download-http-from-port u headers body-input))]
                              [_
                                `(error . (http-not-ok . ,status))])])
                      (close-input-port body-input)
@@ -685,6 +690,15 @@
   (kill-thread result-thread)
   (kill-thread timeout-thread)
   result)
+
+(: uri-download (-> Positive-Float Url Download-Result))
+(define (uri-download timeout u)
+  (match (url-scheme u)
+    ; TODO Support Gopher.
+    [(or "http" "https")
+     (uri-download-http timeout u)]
+    [scheme
+      `(error . (unsupported-url-scheme . ,scheme))]))
 
 (: timeline-print (-> Out-Format (Listof Msg) Void))
 (define (timeline-print out-format timeline)
