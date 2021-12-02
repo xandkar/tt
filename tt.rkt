@@ -166,23 +166,18 @@
 
 (: peers-merge (-> (Listof Peer) * (Listof Peer)))
 (define (peers-merge . peer-sets)
-  (define (merge peers)
+  (define (merge-2 p1 p2)
+    (match* (p1 p2)
+      [((Peer n1 _ _ _) (Peer n2 _ _ _)) #:when (and n1 n2) p1] ; TODO compare which is more-common?
+      [((Peer #f _ _ _) (Peer #f _ _ _))                    p1] ; TODO update with most-common nick?
+      [((Peer n1 _ _ _) (Peer #f _ _ _))                    p1]
+      [((Peer #f _ _ _) (Peer n2 _ _ _))                    p2]))
+  (define (merge-n peers)
     (match peers
       ['() (raise 'impossible)]
       [(list p) p]
-      [(list* p1 p2 ps)
-       (let* ([n1 (Peer-nick p1)]
-              [n2 (Peer-nick p2)]
-              [p (cond
-                   ; TODO Try to pick from nicks db: preferred, otherwise seen
-                   [(and (not n1) (not n2)) p1] ; TODO update with most-common nick
-                   [(and      n1       n2 ) p1] ; TODO compare which is more-common
-                   [(and      n1  (not n2)) p1]
-                   [(and (not n1)      n2)  p2]
-                   [else
-                     (raise 'impossible)])])
-         (merge (cons p ps)))]))
-  (sort (map merge (group-by Peer-url-str (append* peer-sets)))
+      [(list* p1 p2 ps) (merge-n (cons (merge-2 p1 p2) ps))]))
+  (sort (map merge-n (group-by Peer-url-str (append* peer-sets)))
         (match-lambda**
           [((Peer _ _ u1 _) (Peer _ _ u2 _)) (string<? u1 u2)])))
 
