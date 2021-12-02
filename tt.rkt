@@ -44,7 +44,7 @@
   (Immutable-HashTable Url (Immutable-HashTable (Option String) Hist)))
 
 (struct User
-        ([uri  : Url]
+        ([url  : Url]
          [nick : (Option String)]))
 
 (struct User-Agent
@@ -64,8 +64,8 @@
 
 (struct Peer
         ([nick    : (Option String)]
-         [uri     : Url]
-         [uri-str : String]
+         [url     : Url]
+         [url-str : String]
          [comment : (Option String)])
         #:transparent)
 
@@ -139,12 +139,12 @@
 
 (: peers-equal? (-> Peer Peer Boolean))
 (define (peers-equal? p1 p2)
-  (equal? (Peer-uri-str p1)
-          (Peer-uri-str p2)))
+  (equal? (Peer-url-str p1)
+          (Peer-url-str p2)))
 
 (: peer-hash (-> Peer Fixnum))
 (define (peer-hash p)
-  (equal-hash-code (Peer-uri-str p)))
+  (equal-hash-code (Peer-url-str p)))
 
 (define-custom-set-types peers
   #:elem? Peer?
@@ -169,7 +169,7 @@
   (define groups
     (foldl
       (λ (p groups)
-         (hash-update groups (Peer-uri-str p) (λ (group) (cons p group)) '()))
+         (hash-update groups (Peer-url-str p) (λ (group) (cons p group)) '()))
       (hash)
       (append* peer-sets)))
   (define (merge peers)
@@ -261,11 +261,11 @@
     (λ (out-format color-i msg)
        (let ([color (vector-ref colors (modulo color-i n))]
              [nick  (Peer-nick (Msg-from msg))]
-             [uri   (Peer-uri-str (Msg-from msg))]
+             [url   (Peer-url-str (Msg-from msg))]
              [text  (Msg-text msg)])
          (match out-format
            ['single-line
-            (let ([nick (if nick nick uri)])
+            (let ([nick (if nick nick url)])
               (printf "~a  \033[1;37m<~a>\033[0m  \033[0;~am~a\033[0m~n"
                       (parameterize
                         ([date-display-format 'iso-8601])
@@ -278,7 +278,7 @@
                         ([date-display-format 'rfc2822])
                         (date->string (seconds->date (Msg-ts-epoch msg)) #t))
                       (Msg-ts-orig msg)
-                      nick uri color text))])))))
+                      nick url color text))])))))
 
 (: rfc3339->epoch (-> String (Option Nonnegative-Integer)))
 (define rfc3339->epoch
@@ -334,8 +334,8 @@
                   (let ([mentions
                           (filter-map
                             (λ (m) (match (regexp-match #px"@<([^>]+)>" m)
-                                     [(list _wholething nick-uri)
-                                      (str->peer nick-uri)]))
+                                     [(list _wholething nick-url)
+                                      (str->peer nick-url)]))
                             (regexp-match* #px"@<[^\\s]+([\\s]+)?[^>]+>" text))])
                     (Msg ts-epoch ts-orig from text mentions))
                   (begin
@@ -355,7 +355,7 @@
                          (string-append d h m))]
          [tzs (list* "" "Z" tzs)])
     (for* ([n   '("fake-nick")]
-           [u   '("http://fake-uri")]
+           [u   '("http://fake-url")]
            [p   (list (Peer n (string->url u) u #f))]
            [s   '("" ":10")]
            [f   '("" ".1337")]
@@ -376,8 +376,8 @@
          [tab      "	"]
          [text     "Lorem ipsum"]
          [nick     "foo"]
-         [uri      "http://bar/"]
-         [peer     (Peer nick (string->url uri) uri #f)]
+         [url      "http://bar/"]
+         [peer     (Peer nick (string->url url) url #f)]
          [actual   (str->msg peer (string-append ts tab text))]
          [expected (Msg 1605756129 ts peer text '())])
     (check-equal?
@@ -393,13 +393,13 @@
       (Peer-nick (Msg-from expected))
       "str->msg nick")
     (check-equal?
-      (Peer-uri (Msg-from actual))
-      (Peer-uri (Msg-from expected))
-      "str->msg uri")
+      (Peer-url (Msg-from actual))
+      (Peer-url (Msg-from expected))
+      "str->msg url")
     (check-equal?
-      (Peer-uri-str (Msg-from actual))
-      (Peer-uri-str (Msg-from expected))
-      "str->msg uri-str")
+      (Peer-url-str (Msg-from actual))
+      (Peer-url-str (Msg-from expected))
+      "str->msg url-str")
     (check-equal?
       (Msg-text actual)
       (Msg-text expected)
@@ -425,37 +425,37 @@
 (define cache-object-dir (build-path cache-dir "objects"))
 
 (: url->cache-file-path-v1 (-> Url Path-String))
-(define (url->cache-file-path-v1 uri)
+(define (url->cache-file-path-v1 url)
   (define (hash-sha1 str) : (-> String String)
     (define in (open-input-string str))
     (define digest (sha1 in))
     (close-input-port in)
     digest)
-  (build-path cache-object-dir (hash-sha1 (url->string uri))))
+  (build-path cache-object-dir (hash-sha1 (url->string url))))
 
 (: url->cache-file-path-v2 (-> Url Path-String))
-(define (url->cache-file-path-v2 uri)
-  (build-path cache-object-dir (uri-encode (url->string uri))))
+(define (url->cache-file-path-v2 url)
+  (build-path cache-object-dir (uri-encode (url->string url))))
 
 (define url->cache-object-path
   url->cache-file-path-v2)
 
-(define (url->cache-etag-path uri)
-  (build-path cache-dir "etags" (uri-encode (url->string uri))))
+(define (url->cache-etag-path url)
+  (build-path cache-dir "etags" (uri-encode (url->string url))))
 
-(define (url->cache-lmod-path uri)
-  (build-path cache-dir "lmods" (uri-encode (url->string uri))))
+(define (url->cache-lmod-path url)
+  (build-path cache-dir "lmods" (uri-encode (url->string url))))
 
-(: uri-read-cached (-> Url (Option String)))
-(define (uri-read-cached uri)
-  (define path-v1 (url->cache-file-path-v1 uri))
-  (define path-v2 (url->cache-file-path-v2 uri))
+(: url-read-cached (-> Url (Option String)))
+(define (url-read-cached url)
+  (define path-v1 (url->cache-file-path-v1 url))
+  (define path-v2 (url->cache-file-path-v2 url))
   (when (file-exists? path-v1)
     (rename-file-or-directory path-v1 path-v2 #t))
   (if (file-exists? path-v2)
       (file->string path-v2)
       (begin
-        (log-debug "Cache file not found for URI: ~a" (url->string uri))
+        (log-debug "Cache file not found for URL: ~a" (url->string url))
         #f)))
 
 (: str->url (-> String (Option String)))
@@ -487,7 +487,7 @@
            comment)
      (match (str->url url)
        [#f
-         (log-error "Invalid URI in peer string: ~v" str)
+         (log-error "Invalid URL in peer string: ~v" str)
          #f]
        [url
          (Peer nick url (url->string url) comment)])]
@@ -596,15 +596,15 @@
     [(list val) val]
     [_           #f]))
 
-(: uri-download-http-from-port
+(: url-download-http-from-port
    (-> Url (Listof (U Bytes String)) Input-Port
        (U 'skipped-cached 'downloaded-new))) ; TODO 'ok|'error ?
-(define (uri-download-http-from-port u headers body-input)
+(define (url-download-http-from-port u headers body-input)
    ; TODO Update message db from here? or where?
    ; - 1st try can just be an in-memory set that gets written-to
    ;   and read-from disk as a whole.
   (define u-str (url->string u))
-  (log-debug "uri-download-http-from-port ~v into ~v" u-str cached-object-path)
+  (log-debug "url-download-http-from-port ~v into ~v" u-str cached-object-path)
   (define cached-object-path (url->cache-object-path u))
   (define cached-etag-path (url->cache-etag-path u))
   (define cached-lmod-path (url->cache-lmod-path u))
@@ -646,8 +646,8 @@
         'downloaded-new)
       'skipped-cached))
 
-(: uri-download-http (-> Positive-Float Url Download-Result))
-(define (uri-download-http timeout u)
+(: url-download-http (-> Positive-Float Url Download-Result))
+(define (url-download-http timeout u)
   (define u-str (url->string u))
   (define timeout-chan (make-channel))
   (define result-chan (make-channel))
@@ -680,7 +680,7 @@
                            ; TODO Should a redirect update a peer URL?
                            (match status
                              [200
-                               `(ok . ,(uri-download-http-from-port u headers body-input))]
+                               `(ok . ,(url-download-http-from-port u headers body-input))]
                              [_
                                `(error . (http-not-ok . ,status))])])
                      (close-input-port body-input)
@@ -691,12 +691,12 @@
   (kill-thread timeout-thread)
   result)
 
-(: uri-download (-> Positive-Float Url Download-Result))
-(define (uri-download timeout u)
+(: url-download (-> Positive-Float Url Download-Result))
+(define (url-download timeout u)
   (match (url-scheme u)
     ; TODO Support Gopher.
     [(or "http" "https")
-     (uri-download-http timeout u)]
+     (url-download-http timeout u)]
     [scheme
       `(error . (unsupported-url-scheme . ,scheme))]))
 
@@ -716,9 +716,9 @@
 
 (: peer->msgs (-> Peer (Listof Msg)))
 (define (peer->msgs peer)
-  (match-define (Peer nick uri uri-str _) peer)
-  (log-debug "Reading peer nick:~v uri:~v" nick uri-str)
-  (define msgs-data (uri-read-cached uri))
+  (match-define (Peer nick url url-str _) peer)
+  (log-debug "Reading peer nick:~v url:~v" nick url-str)
+  (define msgs-data (url-read-cached url))
   ; TODO Expire cache
   (if msgs-data
       (str->msgs peer msgs-data)
@@ -729,10 +729,10 @@
        (Result (U 'skipped-cached 'downloaded-new)
                Any)))
 (define (peer-download timeout peer)
-  (match-define (Peer nick uri u _) peer)
+  (match-define (Peer nick url u _) peer)
   (log-info "Download BEGIN URL:~a" u)
   (define-values (results _tm-cpu-ms tm-real-ms _tm-gc-ms)
-    (time-apply uri-download (list timeout uri)))
+    (time-apply url-download (list timeout url)))
   (define result (car results))
   (log-info "Download END in ~a seconds, URL:~a, result:~s"
             (/ tm-real-ms 1000.0)
@@ -815,7 +815,7 @@
     (set-map denied-hosts (λ (h) (pregexp (string-append "\\." h "$")))))
   (filter
     (λ (p)
-       (define host (url-host (Peer-uri p)))
+       (define host (url-host (Peer-url p)))
        (not (or (set-member? denied-hosts host)
                 (ormap (λ (d) (regexp-match? d host)) denied-domain-patterns))))
     peers))
@@ -937,7 +937,7 @@
 (define (peers-update-nick-to-common unh peers)
   (map
     (λ (p)
-       (match (url-nick-hist-common unh (Peer-uri p))
+       (match (url-nick-hist-common unh (Peer-url p))
          [#f p]
          [n (struct-copy Peer p [nick n])]))
     peers))
