@@ -172,6 +172,7 @@
       [((Peer #f _ _ _) (Peer #f _ _ _))                    p1] ; TODO update with most-common nick?
       [((Peer n1 _ _ _) (Peer #f _ _ _))                    p1]
       [((Peer #f _ _ _) (Peer n2 _ _ _))                    p2]))
+  (: merge-n (-> (Listof Peer) Peer))
   (define (merge-n peers)
     (match peers
       ['() (raise 'impossible)]
@@ -1053,17 +1054,22 @@
 (define (dispatch command)
   (match command
     [(or "d" "download")
-     (let ([num-workers 20] ; 20 was fastest out of the tried: 1, 5, 10, 20, 25, 30.
-           [timeout     10.0])
+     ; 20 was fastest out of the tried: 1, 5, 10, 20, 25, 30.
+     (let ([num-workers : Positive-Integer 20]
+           [timeout     : Positive-Flonum  10.0])
        (command-line
          #:program "tt download"
          #:once-each
          [("-j" "--jobs")
-          njobs "Number of concurrent jobs."
-          (set! num-workers (string->number njobs))]
+          positive-integer "Number of concurrent jobs."
+          (set! num-workers
+                (assert (string->number positive-integer)
+                        (conjoin exact-positive-integer?)))]
          [("-t" "--timeout")
-          seconds "Timeout seconds per request."
-          (set! timeout (string->number seconds))]
+          positive-float "Timeout seconds per request."
+          (set! timeout
+                (assert (string->number positive-float)
+                        (conjoin positive? flonum?)))]
          #:args file-paths
          (download file-paths num-workers timeout)))]
     [(or "u" "upload")
